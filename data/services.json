@@ -1,0 +1,4 @@
+{
+  "api": {"state":"degraded","incident_id":"INC-042","region":"ap-south-1","message":"Elevated timeout rate. Engineering is investigating. No recovery estimate available."},
+  "exports": {"state":"operational","incident_id":null,"region":"all","message":"No active export incidents."}
+}

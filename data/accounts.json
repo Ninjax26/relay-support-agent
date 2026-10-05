@@ -1,0 +1,5 @@
+{
+  "acct_demo": {"name":"Northstar Labs","plan":"Pro","locked":false,"payments":[{"invoice":"INV-204","amount":49,"currency":"USD","state":"settled"},{"invoice":"INV-204","amount":49,"currency":"USD","state":"settled"}]},
+  "acct_basic": {"name":"Cedar Studio","plan":"Basic","locked":false,"payments":[{"invoice":"INV-301","amount":19,"currency":"USD","state":"settled"}]},
+  "acct_locked": {"name":"Orbit Works","plan":"Business","locked":true,"payments":[]}
+}

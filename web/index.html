@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Relay — Support Operations Agent</title><link rel="stylesheet" href="/styles.css"><script src="/app.js" defer></script></head>
+<body>
+<a class="skip" href="#workspace">Skip to workspace</a>
+<aside class="sidebar">
+  <a class="brand" href="/" aria-label="Relay home"><span class="brand-mark">↗</span> relay<span class="brand-dot">.</span></a>
+  <p class="eyebrow">SUPPORT OPERATIONS</p>
+  <nav aria-label="Workspace"><button class="nav selected" id="workspace-nav" aria-current="page">01 <span>Investigation desk</span><span>↗</span></button><button class="nav" id="workflow-nav">02 <span>How it works</span><span>↗</span></button></nav>
+  <div class="history-heading"><h2>Recent investigations</h2><button id="refresh" aria-label="Refresh investigation history">↻</button></div>
+  <div id="history" class="history"><p class="muted">No investigations yet.</p></div>
+  <div class="sidebar-foot"><span class="status-dot"></span> LOCAL WORKSPACE<p>Fixture data · human-approved actions</p></div>
+</aside>
+<main id="workspace">
+  <header class="topbar"><span>WORKSPACE / INVESTIGATIONS</span><span class="mode-tag" id="mode-tag">DETERMINISTIC DEMO</span></header>
+  <section class="intro"><div><p class="eyebrow orange">FROM CUSTOMER ISSUE TO CLEAR NEXT STEP</p><h1>Evidence first.<br>Action with approval.</h1><p class="intro-copy">A support agent that investigates, cites its sources,<br class="desktop"> and knows when to hand the decision to you.</p></div><div class="intro-side"><span class="big-number">01—04</span><p>RETRIEVE / INVESTIGATE<br>PROPOSE / REVIEW</p></div></section>
+  <section id="workflow" class="workflow" hidden aria-labelledby="workflow-title"><h2 id="workflow-title">Inside an investigation</h2><ol><li><strong>Retrieve</strong><p>Search playbooks using BM25 lexical ranking. Relevant documents become evidence.</p></li><li><strong>Investigate</strong><p>The live model records a checklist, chooses scoped read tools, and revises its plan after observations.</p></li><li><strong>Propose</strong><p>Check the draft against evidence requirements. Fix failed checks before saving the reply and proposal.</p></li><li><strong>Review</strong><p>You approve or reject. Approval creates one local review ticket; it does not issue a refund or change an account.</p></li></ol><p class="muted">Demo mode uses a deterministic planner. Live mode uses an LLM. Both share the same tools and approval boundary.</p></section>
+  <div class="desk">
+    <section class="composer" aria-labelledby="composer-title"><div class="section-top"><span class="eyebrow">01 / CUSTOMER CONTEXT</span><span class="small-label">NEW INVESTIGATION</span></div><h2 id="composer-title">What needs resolving?</h2>
+      <form id="investigate-form"><div class="field-row"><div><label for="account">Customer account</label><select id="account"><option value="acct_demo">Northstar Labs · Pro</option><option value="acct_basic">Cedar Studio · Basic</option><option value="acct_locked">Orbit Works · Business</option></select></div><div><label for="mode">Agent mode</label><select id="mode"><option value="demo">Demo · no API key</option><option value="live">Live LLM · API key required</option></select></div></div>
+      <label for="message">Customer issue</label><textarea id="message" rows="6" maxlength="4000" required placeholder="Describe the issue, symptoms, and what the customer needs…">I was charged twice for the same invoice. Can you investigate and arrange a refund?</textarea>
+      <p class="field-hint">Use demo accounts only. Don’t include passwords or personal data.</p>
+      <button class="primary" id="run" type="submit">Investigate issue <span>↗</span></button></form>
+      <p class="eyebrow scenario-title">TRY A SCENARIO</p><div class="scenarios"><button data-scenario="billing">Duplicate charge <span>↗</span></button><button data-scenario="outage">API timeouts <span>↗</span></button><button data-scenario="login">Locked account <span>↗</span></button><button data-scenario="export">Failed export <span>↗</span></button></div>
+      <p id="feedback" role="status" aria-live="polite" class="feedback"></p>
+    </section>
+    <section class="resolution" aria-label="Investigation result"><div class="section-top"><span class="eyebrow">02 / INVESTIGATION RESULT</span><span id="result-state" class="small-label">READY</span></div><div id="empty-result"><div class="empty-symbol" aria-hidden="true">↳</div><h2 id="resolution-title">Every answer needs<br>a trail of evidence.</h2><p>Run an investigation to see the customer reply, retrieved sources, and proposed next action.</p><div class="empty-flow"><span>Issue</span><span>→</span><span>Tools</span><span>→</span><span>Review</span></div></div>
+      <div id="result" hidden><div class="result-meta" id="result-meta"></div><section id="agent-state" class="agent-state" aria-label="Agent plan and verification"></section><h2>Suggested customer reply</h2><p id="answer" class="answer"></p><div id="citations" class="citations"></div><div class="approval"><p class="eyebrow orange">HUMAN DECISION REQUIRED</p><h3 id="action"></h3><p id="reason"></p><p class="muted">Approval creates a local review ticket. Customer accounts and payments are not changed.</p><div class="decision-buttons"><button class="primary" id="approve">Approve review ticket ↗</button><button class="secondary" id="reject">Reject proposal</button></div><p id="decision-status" role="status"></p></div><button class="export" id="download">Download investigation JSON ↓</button></div>
+    </section>
+  </div>
+  <section id="trace-section" class="trace-section" hidden><div class="trace-header"><div><p class="eyebrow">03 / EXECUTION TRACE</p><h2>The work behind the answer.</h2></div><span id="trace-count" class="small-label"></span></div><div id="trace"></div></section>
+  <footer><span>RELAY / AN AGENT ENGINEERING PORTFOLIO</span><span>Bounded tool loop. Visible evidence. Human control.</span></footer>
+</main>
+</body></html>

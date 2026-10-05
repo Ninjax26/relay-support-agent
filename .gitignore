@@ -1,0 +1,26 @@
+__pycache__/
+*.pyc
+.env*
+!.env.example
+*.sqlite
+*.sqlite3*
+*.db
+*.db-*
+*.log
+*.pem
+*.key
+*.p12
+*.pfx
+credentials*.json
+secrets*.json
+exports/
+private/
+.DS_Store
+.impeccable/
+.codex/
+.agents/
+.aws/
+# Local screenshots and generated artifacts are not publication inputs.
+docs/relay-preview.png
+docs/relay-agent-preview.png
+.venv/
