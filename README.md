@@ -15,6 +15,8 @@ Example: a customer reports a duplicate charge. Relay retrieves the billing poli
 - Verification bound to the exact proposal; new evidence or plan changes invalidate it.
 - Transactional, idempotent approval and rejection in SQLite.
 - Charcoal and burnt-orange UI with saved runs, plans, evidence, traces, and JSON export.
+- Persistent background queue, configurable workers, per-step checkpoints, duplicate-submission protection, and explicit retry.
+- Paginated history, browser progress polling, reload recovery, and local queue health metrics.
 - Scripted demo mode, provider contract tests, evaluation CLI, and GitHub Actions.
 - Bounded transient-error retries and distinct connection, authentication, and quota errors.
 
@@ -75,6 +77,9 @@ Enter the OpenAI key privately. `OPENAI_MODEL` overrides the default `gpt-4.1-mi
 | `GEMINI_MODEL` / `OPENAI_MODEL` | Model override |
 | `GEMINI_TIMEOUT_SECONDS` | Request timeout, 5–60 seconds; default 60 |
 | `PORT` | Local HTTP port; default 8000 |
+| `RELAY_WORKERS` | Worker threads per process, 1–16; default 2 |
+| `RELAY_QUEUE_CAPACITY` | Queued plus running jobs, 1–5000; default 100 |
+| `RELAY_DB_PATH` | Optional separate SQLite workspace path |
 
 `.env.example` contains empty key placeholders and **is not automatically loaded**. A separate evaluation terminal needs its own environment credentials.
 
@@ -82,7 +87,9 @@ Enter the OpenAI key privately. `OPENAI_MODEL` overrides the default `gpt-4.1-mi
 
 ```mermaid
 flowchart TD
-    Issue[Customer issue] --> Plan[Record investigation plan]
+    Issue[Customer issue] --> Queue[Persistent job queue]
+    Queue --> Worker[Background worker]
+    Worker --> Plan[Record investigation plan]
     Plan --> Model[Model selects next tool]
     Model --> Read[Search policies / inspect scoped facts]
     Read --> Observe[Return observations to model]
@@ -99,7 +106,7 @@ The model chooses tools based on observations. Python validates and executes req
 
 `verify_case` checks retrieved citations, action-specific evidence coverage, known invoice/incident identifiers, and limited prohibited action claims. Failed checks return to the model. `complete_case` accepts only the exact verified draft after the latest evidence or plan change.
 
-The loop permits **16 tool calls**, checks a **180-second** wall-clock budget between calls, and supports **two concurrent investigations**. The wall-clock check is not a hard cancellation deadline for an in-flight provider request. Transient Gemini HTTP 500/502/503/504 errors receive up to three total attempts with bounded backoff. Retries do not replay local tool actions.
+The loop permits **16 tool calls**, checks a **180-second** wall-clock budget between calls, and uses configurable workers (**two by default**) behind a persistent queue. The wall-clock check is not a hard cancellation deadline for an in-flight provider request. Transient Gemini HTTP 500/502/503/504 errors receive up to three total attempts with bounded backoff. Retries do not replay local tool actions.
 
 ## Tests and evaluation
 
@@ -107,6 +114,7 @@ The loop permits **16 tool calls**, checks a **180-second** wall-clock budget be
 python3 -m unittest discover -s tests -v
 python3 evals.py
 python3 scripts/check_publish.py
+python3 scripts/benchmark_jobs.py --jobs 50 --workers 4
 ```
 
 Tests cover routing, input validation, tool boundaries, verification feedback and invalidation, provider metadata replay, connection failures, and approval transactions. The demo evaluator includes **10 cases**, checking routing, required citations, verification, and absence of unapproved tickets.
@@ -138,9 +146,11 @@ evals.py         Demo/live evaluation CLI
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
 | GET | `/api/config` | Provider availability and fixture accounts; no credentials |
-| GET | `/api/runs` | Latest 30 investigations |
+| GET | `/api/runs?limit=20&before=<id>` | Paginated summaries and next cursor |
+| GET | `/api/health` | Worker configuration, queue counts, and local ticket count |
 | GET | `/api/runs/{id}` | Saved investigation, evidence, plan, trace |
-| POST | `/api/runs` | Investigate `{ "message": "API timeout", "account_id": "acct_demo", "mode": "demo" }` |
+| POST | `/api/runs` | Queue an investigation; returns 202. Include a unique `request_id` for duplicate protection |
+| POST | `/api/runs/{id}/retry` | Start a new linked run for a failed/interrupted investigation |
 | POST | `/api/runs/{id}/decision` | Submit `{ "decision": "approve" }` or `reject` |
 
 ## Scope and limitations
@@ -150,13 +160,15 @@ evals.py         Demo/live evaluation CLI
 - Approval creates a **local ticket**, not an external ticket or actual refund.
 - Retrieval is **lexical BM25**, not embedding/vector search.
 - Verification is **mechanical**, not proof that every claim is supported.
-- Completed traces are saved; interrupted runs do not have durable per-step checkpoints.
+- Each completed step is saved. Interrupted model conversations are not resumed; an explicit retry starts a new linked run.
 - The server is local and unauthenticated. This is a **portfolio prototype**, not a public production service.
 
 Credentials, runtime databases, local screenshots, caches, and private configuration are excluded from publication. A tracked-file allowlist and credential-pattern scan run in CI. Pattern scanning is defense in depth, not a guarantee of detecting every possible secret.
 
 ## Improvement roadmap
 
-Priorities: held-out live evaluation, BM25/hybrid retrieval comparisons, durable checkpoints, streaming progress, authenticated deployment, and sandbox integrations. See [the roadmap](docs/IMPROVEMENTS.md).
+This iteration adds persistent queued jobs, saved progress, retry, and paginated history. See [scaling and API migration](docs/SCALING.md).
+
+Remaining priorities: held-out live evaluation, BM25/hybrid retrieval comparisons, conversation resumption, SSE streaming, authenticated deployment, and sandbox integrations. See [the roadmap](docs/IMPROVEMENTS.md).
 
 Further reading: [workflow and interview explanation](docs/WORKFLOW.md), [external setup and troubleshooting](docs/EXTERNAL_SETUP.md), and [resume/demo guide](docs/RESUME.md).

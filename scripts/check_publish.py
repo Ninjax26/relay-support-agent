@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 ROOT_FILES = {"README.md", ".gitignore", ".env.example", "server.py", "run_live.py", "evals.py"}
-DOCS = {"WORKFLOW.md", "EXTERNAL_SETUP.md", "RESUME.md", "IMPROVEMENTS.md", "VALIDATION.md"}
+DOCS = {"WORKFLOW.md", "EXTERNAL_SETUP.md", "RESUME.md", "IMPROVEMENTS.md", "VALIDATION.md", "SCALING.md"}
 PATTERNS = {
     "Google API key": r"AIza[0-9A-Za-z_-]{30,}",
     "OpenAI key": r"\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}",

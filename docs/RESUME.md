@@ -9,6 +9,7 @@ Stack: Python, Gemini API / OpenAI Responses API, BM25 retrieval, SQLite, JavaSc
 ## Resume bullets supported by this implementation
 
 - Built a support investigation agent with model-selected tool calls, BM25 knowledge retrieval, scoped account/service tools, and validated evidence citations.
+- Added a persistent SQLite job queue with background workers, saved tool-step checkpoints, idempotent submissions, paginated history, and retry for failed investigations.
 - Implemented a human approval workflow with transactional SQLite persistence and idempotent local review-ticket creation; prevented agent access to payment/account mutation tools.
 - Added observable tool traces, token usage accounting, bounded execution, explicit plan revisions, a verification-and-revision loop, deterministic regression evaluation, and fake-provider tests for tool-loop recovery and failure handling.
 

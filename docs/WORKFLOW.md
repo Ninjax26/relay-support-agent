@@ -2,11 +2,11 @@
 
 ## Example: “I was charged twice”
 
-1. **Input:** You select Northstar Labs and enter the issue. The backend validates the message, mode, and fixture account.
+1. **Input:** You select Northstar Labs and enter the issue. The backend validates input and persists a queued job, returning an ID immediately. Background workers execute the investigation.
 2. **Plan and retrieve:** The agent records a short operational checklist with `update_plan`.  `search_knowledge` ranks policy documents with BM25. Each result has an ID, title, text, and score. This supplies relevant context rather than relying on model memory.
 3. **Observe:** `lookup_account` reads only the account selected for this run. Two settled payments share invoice INV-204. In live mode, the model sees these observations and decides its next tool call.
 4. **Revise, verify, complete:** The agent may revise its plan, then calls `verify_case`. Missing evidence is returned as feedback; the live model can search again or revise. `complete_case` accepts only the exact draft that passed after the latest evidence/plan change.  `complete_case` receives a customer reply, citations, review type, and reason. The dispatcher rejects unknown citation IDs and unsupported actions.
-5. **Checkpoint:** SQLite saves the completed run as `awaiting_approval`, including tool inputs/results, durations, and token totals.
+5. **Checkpoint:** SQLite saves each completed tool step and finally marks the run `awaiting_approval`. The UI polls saved progress; failures keep the existing trace.
 6. **Human review:** You inspect the facts and approve or reject. Approval creates one local billing-review ticket. Repeated approval returns the same ticket. It never issues an actual refund.
 
 ## Why this is agentic in live mode
@@ -27,8 +27,8 @@ A conventional chatbot generates a reply directly. This live agent selects a too
 
 - Citation existence is checked; entailment is not. A live model can still write an unsupported claim. Human review and held-out groundedness evaluation are necessary.
 - Prompts treat customer messages/documents as untrusted. This instruction alone is not a proven injection defense. Tool allowlisting and approval separation limit what the model can do even if it follows malicious text.
-- Stored runs are checkpoints after completion. A process crash mid-run loses the trace; durable step checkpoints are a future improvement.
-- Live mode is a synchronous request. Tool traces appear after completion. Streaming and durable queues would improve longer investigations.
+- Completed tool calls are checkpointed. Worker crashes preserve those steps; after lease expiry the run becomes interrupted. Explicit retry starts a new linked run instead of resuming the conversation.
+- Live investigations run in a persistent background queue. The browser polls progress and reconnects after reload. Push streaming and full conversation resumption remain future improvements.
 - This small app uses Python's standard HTTP server to minimize setup. A public service needs a production framework/server and authentication.
 - One agent is intentional. Multiple agents add routing and coordination cost; introduce them only if measured task quality or specialization justifies it.
 

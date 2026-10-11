@@ -181,14 +181,19 @@ def demo_calls(message, tools):
     yield "complete_case", proposal
 
 
-def investigate(message, account_id, mode="demo", planner=None):
+def validate_request(message, account_id, mode):
     if mode not in {"demo", "live"}:
         raise ValueError("mode must be demo or live")
     tools = Tools(account_id)
-    if account_id not in tools.accounts:
+    if not isinstance(account_id, str) or account_id not in tools.accounts:
         raise ValueError("Choose an available demo account")
     if not isinstance(message, str) or not message.strip() or len(message) > 4000:
         raise ValueError("Describe the issue in 1–4000 characters")
+    return tools
+
+
+def investigate(message, account_id, mode="demo", planner=None, on_step=None):
+    tools = validate_request(message, account_id, mode)
     started = time.monotonic()
     trace, history, usage = [], [{"role": "user", "content": message}], {"input_tokens": 0, "output_tokens": 0}
     if mode == "live":
@@ -226,6 +231,10 @@ def investigate(message, account_id, mode="demo", planner=None):
         except ToolError as exc:
             result, ok = {"error": str(exc)}, False
         trace.append({"step": step + 1, "tool": name, "arguments": args, "result": result, "ok": ok, "duration_ms": round((time.monotonic() - tick) * 1000, 2)})
+        if on_step:
+            on_step({"model": getattr(planner, "model", "deterministic-demo"), "plan": tools.plan, "plan_history": tools.plan_history,
+                     "verification": tools.verification, "evidence": list(tools.evidence.values()), "trace": trace, "usage": usage,
+                     "duration_ms": round((time.monotonic() - started) * 1000)})
         if name == "complete_case" and ok:
             return {"message": message, "account_id": account_id, "mode": mode, "model": getattr(planner, "model", "deterministic-demo"), "status": "awaiting_approval", "answer": result, "plan": tools.plan, "plan_history": tools.plan_history, "verification": tools.verification, "evidence": list(tools.evidence.values()), "trace": trace, "usage": usage, "duration_ms": round((time.monotonic() - started) * 1000)}
         if mode == "live":
