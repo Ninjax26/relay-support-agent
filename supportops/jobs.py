@@ -16,8 +16,11 @@ class JobRunner:
 
     def submit(self, request, request_key, retry_of=None):
         validate_request(request.get("message"), request.get("account_id"), request.get("mode"))
-        if request["mode"] == "live" and not provider_config()["live_available"]:
-            raise ValueError("Live mode requires a configured provider key. Run python3 run_live.py locally.")
+        if request["mode"] == "live":
+            config = provider_config()
+            if not config["live_available"]:
+                raise ValueError("Live mode requires a configured provider key. Run python3 run_live.py locally.")
+            request = {**request, "provider": config["provider"]}
         return self.store.enqueue(request, request_key, self.capacity, retry_of)
 
     def start(self):
@@ -40,7 +43,8 @@ class JobRunner:
                 continue
 
     def run_one(self):
-        run = self.store.claim(self.owner)
+        config = provider_config()
+        run = self.store.claim(self.owner, provider=config["provider"] if config["live_available"] else None)
         if not run:
             return False
         try:

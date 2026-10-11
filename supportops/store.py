@@ -112,7 +112,7 @@ class Store:
         db.execute("UPDATE runs SET payload=? WHERE id=?", (json.dumps(run), run["id"]))
         return run
 
-    def claim(self, owner, lease_seconds=90):
+    def claim(self, owner, lease_seconds=90, provider="any"):
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             expired = db.execute("SELECT run_id FROM jobs WHERE state='running' AND lease_until<?", (time.time(),)).fetchall()
@@ -120,7 +120,10 @@ class Store:
                 run = json.loads(db.execute("SELECT payload FROM runs WHERE id=?", (run_id,)).fetchone()[0])
                 self._update(db, run, {"status": "interrupted", "error": "Worker stopped before completion. Saved steps remain available. Retry starts a new investigation."})
                 db.execute("UPDATE jobs SET state='interrupted',owner=NULL WHERE run_id=?", (run_id,))
-            row = db.execute("SELECT jobs.run_id,runs.payload FROM jobs JOIN runs ON runs.id=jobs.run_id WHERE jobs.state='queued' ORDER BY runs.created_at,runs.id LIMIT 1").fetchone()
+            row = db.execute("""SELECT jobs.run_id,runs.payload FROM jobs JOIN runs ON runs.id=jobs.run_id
+            WHERE jobs.state='queued' AND (?='any' OR json_extract(runs.payload,'$.mode')='demo'
+            OR (json_extract(runs.payload,'$.mode')='live' AND json_extract(runs.payload,'$.provider')=?))
+            ORDER BY runs.created_at,runs.id LIMIT 1""", (provider, provider)).fetchone()
             if not row:
                 return None
             db.execute("UPDATE jobs SET state='running',owner=?,lease_until=? WHERE run_id=?", (owner, time.time() + lease_seconds, row[0]))

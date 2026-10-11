@@ -56,6 +56,17 @@ class JobTests(unittest.TestCase):
         reopened = Store(self.path)
         self.assertEqual(reopened.claim("new-worker")["id"], queued["id"])
 
+    def test_demo_worker_does_not_claim_live_work(self):
+        live = self.store.enqueue({**REQUEST, "mode": "live", "provider": "gemini"}, "live-key")
+        self.assertIsNone(self.store.claim("demo-worker", provider=None))
+        self.assertEqual(self.store.get(live["id"])["status"], "queued")
+        self.assertEqual(self.store.claim("gemini-worker", provider="gemini")["id"], live["id"])
+
+    def test_live_jobs_are_routed_to_their_selected_provider(self):
+        self.store.enqueue({**REQUEST, "mode": "live", "provider": "openai"}, "live-key")
+        self.assertIsNone(self.store.claim("gemini-worker", provider="gemini"))
+        self.assertIsNotNone(self.store.claim("openai-worker", provider="openai"))
+
     def test_failure_preserves_checkpoint_and_retry_is_new_run(self):
         def fail(message, account, mode, on_step):
             on_step({"trace": [{"step": 1, "tool": "update_plan", "ok": True}], "duration_ms": 1})

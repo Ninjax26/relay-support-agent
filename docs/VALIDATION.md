@@ -22,3 +22,5 @@ Transient-error handling: 23 unit tests pass. Added 503-then-success retry, repe
 Connection diagnosis: 25 tests pass. Mocked DNS, TLS, timeout, and generic connection failures produce distinct messages; timeout configuration is bounded. An unauthenticated host connectivity check outside the restricted tool sandbox resolved both Google hosts and received HTTPS responses (API root 404, docs root 200). This proves reachability at check time, not authenticated model availability.
 
 Scaling iteration: 40 tests pass, including loopback HTTP tests, concurrent job claims, durable queue reopening, partial-trace failure, idempotent retry, stale-worker fencing, cursor pagination, and approval boundaries. A four-worker deterministic load run completed 50/50 jobs with all traces saved and no unapproved tickets (0.454 seconds total; enqueue p95 3.213 ms). This excludes LLM/API latency. Browser verification observed queued-to-awaiting-approval progress, approval, and persisted state after reload.
+
+Final routing safeguard: 42 tests pass. Added checks that demo workers leave live work queued and a worker cannot claim live jobs for another provider.
