@@ -1,4 +1,4 @@
-"""Local portfolio server. Run: python3 server.py."""
+"""Local support operations server. Run: python3 server.py."""
 import json
 import os
 import uuid

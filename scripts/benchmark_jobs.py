@@ -1,4 +1,4 @@
-"""Local deterministic queue load check; no model calls or production claims."""
+"""Deterministic job-queue load benchmark using temporary storage."""
 import argparse
 import json
 import sys

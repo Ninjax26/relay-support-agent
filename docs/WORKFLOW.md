@@ -1,37 +1,38 @@
-# Understand the workflow
+# Execution workflow
 
-## Example: “I was charged twice”
+Relay processes support investigations through a persistent queue, a bounded tool-calling loop, and a separate approval transaction.
 
-1. **Input:** You select Northstar Labs and enter the issue. The backend validates input and persists a queued job, returning an ID immediately. Background workers execute the investigation.
-2. **Plan and retrieve:** The agent records a short operational checklist with `update_plan`.  `search_knowledge` ranks policy documents with BM25. Each result has an ID, title, text, and score. This supplies relevant context rather than relying on model memory.
-3. **Observe:** `lookup_account` reads only the account selected for this run. Two settled payments share invoice INV-204. In live mode, the model sees these observations and decides its next tool call.
-4. **Revise, verify, complete:** The agent may revise its plan, then calls `verify_case`. Missing evidence is returned as feedback; the live model can search again or revise. `complete_case` accepts only the exact draft that passed after the latest evidence/plan change.  `complete_case` receives a customer reply, citations, review type, and reason. The dispatcher rejects unknown citation IDs and unsupported actions.
-5. **Checkpoint:** SQLite saves each completed tool step and finally marks the run `awaiting_approval`. The UI polls saved progress; failures keep the existing trace.
-6. **Human review:** You inspect the facts and approve or reject. Approval creates one local billing-review ticket. Repeated approval returns the same ticket. It never issues an actual refund.
+## Investigation lifecycle
 
-## Why this is agentic in live mode
+1. **Submit:** The API validates the issue, account, and mode; stores a queued job; and returns HTTP 202 with the investigation ID. Repeated submissions with the same request ID and input return the same job.
+2. **Claim:** A background worker claims an eligible job under a renewable lease. Live jobs are assigned to workers configured for the selected provider.
+3. **Plan:** The agent records an operational checklist using `update_plan`.
+4. **Retrieve and inspect:** `search_knowledge` retrieves policy documents using BM25. Account and service tools return scoped fixture data. Observations are returned to the model for subsequent tool selection.
+5. **Verify:** `verify_case` checks the proposed reply, evidence references, action-specific requirements, identifiers, and limited prohibited action claims. Failed checks return to the agent for revision.
+6. **Complete:** `complete_case` accepts only the exact verified proposal after the latest evidence or plan change. The investigation enters `awaiting_approval`.
+7. **Review:** A human approves or rejects the proposal. Approval creates one local review ticket; repeated approvals return the same ticket.
 
-A conventional chatbot generates a reply directly. This live agent selects a tool, observes its result, and selects the next tool. Different issues need different observations: a timeout needs service status; an export failure needs plan eligibility and service status. `complete_case` ends the loop. The deterministic demo imitates these workflows for repeatable demonstrations; it is not autonomous LLM reasoning.
+Each completed tool call checkpoints its trace, evidence, plan, verification, token totals, and duration. The browser polls the saved snapshot and restores the selected investigation after reload.
 
-## Four concepts to explain in an interview
+## Tool boundaries
 
-**Tool calling:** The LLM proposes a structured function invocation. Python, not the model, validates and executes it. A model never receives arbitrary shell or SQL access.
+| Tool | Responsibility |
+| --- | --- |
+| `update_plan` | Record or revise the investigation checklist |
+| `search_knowledge` | Retrieve relevant support policies |
+| `lookup_account` | Read the account scoped to the investigation |
+| `check_service` | Read supported service status |
+| `verify_case` | Check a proposed reply against evidence and policy requirements |
+| `complete_case` | Finalize the verified proposal for human review |
 
-**Retrieval grounding:** BM25 matches issue terms against documents. The retrieved passages become context for answer generation. This is a lexical RAG pipeline in live mode. BM25 is fast and explainable for this small corpus but weak on synonyms and semantic similarity. Embeddings and hybrid search are useful experiments, not implemented features.
+The dispatcher validates tool names and argument schemas. The model has no shell, arbitrary SQL, payment mutation, or account mutation tool. Ticket creation occurs through the separate human decision API.
 
-**Human-in-the-loop:** The proposal and execution have different API paths. The LLM can only propose. A separate human review request creates a ticket. The tool schema has no payment or account mutation tool.
+## Execution modes
 
-**Evaluation:** Tests establish control flow and persistence properties. Deterministic scenarios verify routing and required evidence. To measure actual ML quality, run a held-out live dataset and grade factual support, tool choice, retrieval recall, resolution quality, and abstention. A 100% demo pass rate says nothing about live LLM accuracy.
+Live mode uses Gemini or OpenAI to select tools based on observations. Demo mode uses a deterministic planner with the same tool dispatcher and approval boundary. Account, payment, incident, and policy data are supplied fixtures.
 
-## Limits and tradeoffs
+## Failure handling
 
-- Citation existence is checked; entailment is not. A live model can still write an unsupported claim. Human review and held-out groundedness evaluation are necessary.
-- Prompts treat customer messages/documents as untrusted. This instruction alone is not a proven injection defense. Tool allowlisting and approval separation limit what the model can do even if it follows malicious text.
-- Completed tool calls are checkpointed. Worker crashes preserve those steps; after lease expiry the run becomes interrupted. Explicit retry starts a new linked run instead of resuming the conversation.
-- Live investigations run in a persistent background queue. The browser polls progress and reconnects after reload. Push streaming and full conversation resumption remain future improvements.
-- This small app uses Python's standard HTTP server to minimize setup. A public service needs a production framework/server and authentication.
-- One agent is intentional. Multiple agents add routing and coordination cost; introduce them only if measured task quality or specialization justifies it.
+Provider failures preserve completed steps and mark the run failed. A worker crash leaves the run interrupted after lease expiration. Explicit retry starts a new linked investigation; it does not restore the previous model conversation or replay an approval.
 
-## A 60-second explanation
-
-“I built Relay, an evidence-driven support operations agent. A live LLM chooses read-only tools to retrieve policy documents and inspect scoped account or service facts. The backend validates every tool call, enforces a sixteen-call budget, and requires citations to retrieved evidence. It saves a structured investigation trace in SQLite. Customer-impacting decisions go through a separate human review path; approval creates an idempotent local ticket. I also built a deterministic demo and regression checks so the workflow can be tested without paid API calls. The next experiment is comparing lexical and hybrid retrieval on a labeled dataset and measuring live answer groundedness.”
+The agent permits at most 16 tool calls and checks its wall-clock budget between calls. Verification is mechanical and does not establish semantic support for every generated claim. Retrieval is lexical BM25. For worker configuration and recovery details, see [job processing](SCALING.md).

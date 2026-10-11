@@ -20,27 +20,11 @@ The adapter uses [Google's documented compatibility endpoint](https://ai.google.
 
 Google offers free usage for selected models, with quotas and eligibility constraints. Check your project's current limits in AI Studio and the [pricing page](https://ai.google.dev/gemini-api/docs/pricing). Quota failures produce a retry/check-limits message; Relay does not silently switch providers or enable billing. Free-tier data may be used to improve Google's products. Use the provided fictional scenarios.
 
-## Optional integrations
-
-| External input | Purpose | Current status |
-| --- | --- | --- |
-| Your own non-sensitive support policies | A real domain knowledge base | Replace entries in data/knowledge.json with unique IDs |
-| Sandbox ticket-system API | External review tickets after approval | Not connected; tickets are local |
-| Read-only account/service APIs | Real scoped facts | Not connected; data is fictional |
-| Hosting and authentication | Protected shareable demo | Not configured; local only |
-| Labeled evaluation dataset | Measure live agent quality | Deterministic demo cases included |
-
-No vector database or orchestration subscription is required.
-
 ## Evaluation and alternative provider
 
 After configuring environment credentials, run `python3 evals.py --live --limit 1` for one live routing/evidence check. The hidden launcher prompt configures only its own process, so a separate evaluation process needs its own environment credentials. Live evaluation is subject to the provider's quota/pricing and does not grade every factual claim.
 
 OpenAI remains available with `PORT=8001 python3 run_live.py --provider openai`. Set `AGENT_PROVIDER` explicitly when both providers' environment credentials exist; otherwise Gemini is selected when its key is present.
-
-## Verification status
-
-25 local tests pass, including Gemini wire-format normalization, tool metadata replay, quota errors, provider selection, and agent approval boundaries. These use mocked provider responses. A user-reported Gemini connection check succeeded. A complete live investigation and live quality benchmark have not been independently verified.
 
 ## HTTP 503 / temporarily unavailable
 
@@ -50,6 +34,6 @@ After updating code, stop the live server with Ctrl+C and restart `PORT=8001 pyt
 
 ## Connection diagnosis
 
-Run `python3 run_live.py --check` from the project directory and enter your key in the hidden prompt. This makes a small authenticated model/tool-call request and exits without creating tickets or executing tools. It consumes provider quota. Share only the CHECK PASSED or CHECK FAILED message when troubleshooting.
+Run `python3 run_live.py --check` from the project directory and enter your key in the hidden prompt. This makes a small authenticated model/tool-call request and exits without creating tickets or executing tools. It consumes provider quota. The command reports CHECK PASSED or CHECK FAILED without exposing credentials.
 
-Relay now distinguishes response timeouts, DNS failures, TLS verification failures, and other connection failures. Gemini requests allow 60 seconds by default; GEMINI_TIMEOUT_SECONDS accepts values from 5 to 60. This is a per-request timeout, not a hard whole-investigation deadline. A running server must be restarted to load source changes.
+Relay distinguishes response timeouts, DNS failures, TLS verification failures, and other connection failures. Gemini requests allow 60 seconds by default; GEMINI_TIMEOUT_SECONDS accepts values from 5 to 60. This is a per-request timeout, not a hard whole-investigation deadline. A running server must be restarted to load source changes.

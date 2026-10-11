@@ -1,6 +1,6 @@
 # Persistent background investigations
 
-Relay now submits work to a SQLite-backed queue and returns HTTP 202 immediately. Configurable workers investigate in the background. Browser progress polling does not keep the submission request open, and the most recently selected run is restored after a page reload.
+Relay submits work to a SQLite-backed queue and returns HTTP 202 immediately. Configurable workers investigate in the background. Browser progress polling does not keep the submission request open, and the most recently selected run is restored after a page reload.
 
 ## Run locally
 
@@ -25,11 +25,11 @@ SQLite WAL and indexed queue/history queries reduce contention and avoid loading
 
 Approval is possible only for `awaiting_approval` runs. Existing repeated approvals still return the same local ticket. Queued, running, failed, and interrupted runs cannot create tickets.
 
-## API changes
+## API reference
 
 ### Submit
 
-`POST /api/runs` now returns **202** with a queued run instead of 201 with a finished answer.
+`POST /api/runs` returns **202** with the queued investigation.
 
 ```json
 {"message":"API timeout","account_id":"acct_demo","mode":"demo","request_id":"client-generated-unique-id"}
@@ -59,8 +59,8 @@ Use the same `request_id` when retrying the same HTTP submission. The server ret
 python3 scripts/benchmark_jobs.py --jobs 50 --workers 4
 ```
 
-One local deterministic run completed 50/50 jobs with four workers, all step traces saved, and zero unapproved tickets. Wall time was 0.454 seconds and enqueue p95 was 3.213 ms on the development machine. These figures exclude model and HTTP latency and are not a production capacity or live-AI throughput claim. Run the script on your own machine to reproduce the measurement.
+The command runs deterministic investigations against a temporary database and reports completion count, enqueue latency, elapsed time, and checkpoint coverage. It does not call model providers or include HTTP latency.
 
-## Remaining production requirements
+## Deployment constraints
 
-This improves concurrency on a local machine. It does not turn the standard-library HTTP server or SQLite into a distributed multi-tenant service. Before internet deployment: add a production server, authentication and tenant authorization, provider-aware rate limits, hard request deadlines, log/trace retention, and a managed database/queue. Do not share SQLite over network filesystems. Different server processes sharing a database share queued work. Live jobs record their selected provider and are claimed only by workers with credentials configured for that provider; demo-only workers leave live work queued. Independent workspaces should still use separate databases.
+The application uses a loopback HTTP server and local SQLite storage. Internet deployment requires a production server, authentication and tenant authorization, provider-aware rate limits, hard request deadlines, log/trace retention, and a managed database/queue. Do not share SQLite over network filesystems. Different server processes sharing a database share queued work. Live jobs record their selected provider and are claimed only by workers with credentials configured for that provider; demo-only workers leave live work queued. Independent workspaces should still use separate databases.

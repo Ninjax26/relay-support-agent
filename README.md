@@ -125,7 +125,7 @@ With provider credentials configured in the evaluation process:
 python3 evals.py --live --limit 1
 ```
 
-Live evaluation consumes quota. These checks **do not measure full semantic answer accuracy** or establish prompt-injection resistance. A user-reported Gemini tool-call connection check succeeded; a complete live quality benchmark has not been independently verified.
+Live evaluation consumes quota. These checks **do not measure full semantic answer accuracy** or establish prompt-injection resistance.
 
 ## Project structure
 
@@ -135,7 +135,7 @@ web/             HTML, CSS, JavaScript workspace
 data/            Fictional policies, accounts, service status
 tests/           Unit and mocked-provider tests
 scripts/         Publication checks
-docs/            Workflow, setup, resume guide, improvement roadmap
+docs/            Execution workflow, setup, operations, and API reference
 server.py        Local HTTP API and static server
 run_live.py      Hidden key prompt and connection check
 evals.py         Demo/live evaluation CLI
@@ -161,14 +161,12 @@ evals.py         Demo/live evaluation CLI
 - Retrieval is **lexical BM25**, not embedding/vector search.
 - Verification is **mechanical**, not proof that every claim is supported.
 - Each completed step is saved. Interrupted model conversations are not resumed; an explicit retry starts a new linked run.
-- The server is local and unauthenticated. This is a **portfolio prototype**, not a public production service.
+- The server binds to loopback. Authentication and tenant authorization are not implemented; internet deployment requires a production server and access controls.
 
 Credentials, runtime databases, local screenshots, caches, and private configuration are excluded from publication. A tracked-file allowlist and credential-pattern scan run in CI. Pattern scanning is defense in depth, not a guarantee of detecting every possible secret.
 
-## Improvement roadmap
+## Documentation
 
-This iteration adds persistent queued jobs, saved progress, retry, and paginated history. See [scaling and API migration](docs/SCALING.md).
-
-Remaining priorities: held-out live evaluation, BM25/hybrid retrieval comparisons, conversation resumption, SSE streaming, authenticated deployment, and sandbox integrations. See [the roadmap](docs/IMPROVEMENTS.md).
-
-Further reading: [workflow and interview explanation](docs/WORKFLOW.md), [external setup and troubleshooting](docs/EXTERNAL_SETUP.md), and [resume/demo guide](docs/RESUME.md).
+- [Execution workflow](docs/WORKFLOW.md)
+- [Provider configuration and troubleshooting](docs/EXTERNAL_SETUP.md)
+- [Job processing, recovery, and API reference](docs/SCALING.md)
