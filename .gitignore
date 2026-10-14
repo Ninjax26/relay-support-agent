@@ -14,6 +14,7 @@ __pycache__/
 credentials*.json
 secrets*.json
 exports/
+reports/
 private/
 .DS_Store
 .impeccable/

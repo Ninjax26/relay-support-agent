@@ -127,6 +127,18 @@ python3 evals.py --live --limit 1
 
 Live evaluation consumes quota. These checks **do not measure full semantic answer accuracy** or establish prompt-injection resistance.
 
+## Agent quality evaluation
+
+A separate quality suite contains 70 synthetic cases with fixed development and test splits. It reports action/tool checks, evidence coverage, clarification and abstention text proxies, latency, and returned tokens. Companion CSV files support human review of groundedness and response usefulness.
+
+```sh
+python3 evals.py --validate
+python3 evals.py --suite quality --split dev --output reports/demo-dev.json
+python3 evals.py --suite quality --live --provider gemini --prompt-key --split test --output reports/live-test.json
+```
+
+Use development cases for tuning and reserve test cases for a frozen configuration. Automatic scores are not semantic answer accuracy. Generated reports remain local in the ignored reports directory. See [evaluation reference](docs/EVALUATION.md).
+
 ## Project structure
 
 ```text

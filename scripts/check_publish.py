@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 ROOT_FILES = {"README.md", ".gitignore", ".env.example", "server.py", "run_live.py", "evals.py"}
-DOCS = {"WORKFLOW.md", "EXTERNAL_SETUP.md", "SCALING.md"}
+DOCS = {"WORKFLOW.md", "EXTERNAL_SETUP.md", "SCALING.md", "EVALUATION.md"}
 PATTERNS = {
     "Google API key": r"AIza[0-9A-Za-z_-]{30,}",
     "OpenAI key": r"\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}",
@@ -26,7 +26,7 @@ def allowed(path):
     directory, name = p.parts
     return ((directory in {"supportops", "tests", "scripts"} and p.suffix == ".py")
             or (directory == "docs" and name in DOCS)
-            or (directory == "data" and name in {"accounts.json", "knowledge.json", "services.json"})
+            or (directory == "data" and name in {"accounts.json", "knowledge.json", "services.json", "evaluation_cases.json"})
             or (directory == "web" and name in {"index.html", "styles.css", "app.js"}))
 
 
