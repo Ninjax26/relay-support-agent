@@ -6,6 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 from supportops.agent import provider_config
+from supportops.retrieval import configured_mode
 from supportops.store import Store, QueueFull
 from supportops.jobs import JobRunner
 
@@ -41,7 +42,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/health":
             return self.send(200, {"status": "ok", "workers": self.server.jobs.workers, "queue_capacity": self.server.jobs.capacity, **self.server.store.metrics()})
         if path == "/api/config":
-            return self.send(200, {**provider_config(), "accounts": ["acct_demo", "acct_basic", "acct_locked"]})
+            return self.send(200, {**provider_config(), "retrieval_mode": configured_mode(), "accounts": ["acct_demo", "acct_basic", "acct_locked"]})
         if path == "/api/runs":
             try:
                 params = parse_qs(parsed.query)

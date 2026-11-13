@@ -1,0 +1,222 @@
+{
+  "version": "relay-retrieval-v1",
+  "provenance": "Synthetic English keyword and paraphrase queries labeled against six fictional playbooks. Not independently human-validated. Test queries must be excluded from tuning.",
+  "cases": [
+    {
+      "id": "retrieval-dev-01",
+      "split": "dev",
+      "category": "billing",
+      "query": "Duplicate payment invoice ledger",
+      "relevant_ids": [
+        "KB-101"
+      ]
+    },
+    {
+      "id": "retrieval-dev-02",
+      "split": "dev",
+      "category": "billing",
+      "query": "Money left my card twice for one purchase",
+      "relevant_ids": [
+        "KB-101"
+      ]
+    },
+    {
+      "id": "retrieval-dev-03",
+      "split": "dev",
+      "category": "api",
+      "query": "API timeout 503 errors",
+      "relevant_ids": [
+        "KB-102"
+      ]
+    },
+    {
+      "id": "retrieval-dev-04",
+      "split": "dev",
+      "category": "api",
+      "query": "Requests keep hanging and our integration feels sluggish",
+      "relevant_ids": [
+        "KB-102"
+      ]
+    },
+    {
+      "id": "retrieval-dev-05",
+      "split": "dev",
+      "category": "access",
+      "query": "Login locked password reset",
+      "relevant_ids": [
+        "KB-103"
+      ]
+    },
+    {
+      "id": "retrieval-dev-06",
+      "split": "dev",
+      "category": "access",
+      "query": "I cannot get into my workspace after forgetting my credentials",
+      "relevant_ids": [
+        "KB-103"
+      ]
+    },
+    {
+      "id": "retrieval-dev-07",
+      "split": "dev",
+      "category": "exports",
+      "query": "Data export failure job timestamp",
+      "relevant_ids": [
+        "KB-104"
+      ]
+    },
+    {
+      "id": "retrieval-dev-08",
+      "split": "dev",
+      "category": "exports",
+      "query": "How can I download all my records on the entry subscription?",
+      "relevant_ids": [
+        "KB-104"
+      ]
+    },
+    {
+      "id": "retrieval-dev-09",
+      "split": "dev",
+      "category": "cancellation",
+      "query": "Cancel subscription billing period",
+      "relevant_ids": [
+        "KB-105"
+      ]
+    },
+    {
+      "id": "retrieval-dev-10",
+      "split": "dev",
+      "category": "cancellation",
+      "query": "I want to stop renewing my membership",
+      "relevant_ids": [
+        "KB-105"
+      ]
+    },
+    {
+      "id": "retrieval-dev-11",
+      "split": "dev",
+      "category": "unknown",
+      "query": "Unknown issue reproduction steps error message",
+      "relevant_ids": [
+        "KB-106"
+      ]
+    },
+    {
+      "id": "retrieval-dev-12",
+      "split": "dev",
+      "category": "unknown",
+      "query": "There are strange purple squares on an unspecified screen",
+      "relevant_ids": [
+        "KB-106"
+      ]
+    },
+    {
+      "id": "retrieval-test-01",
+      "split": "test",
+      "category": "billing",
+      "query": "Investigate repeated settled charges for a single invoice",
+      "relevant_ids": [
+        "KB-101"
+      ]
+    },
+    {
+      "id": "retrieval-test-02",
+      "split": "test",
+      "category": "billing",
+      "query": "My bank statement contains the same debit twice",
+      "relevant_ids": [
+        "KB-101"
+      ]
+    },
+    {
+      "id": "retrieval-test-03",
+      "split": "test",
+      "category": "api",
+      "query": "Backend latency and elevated service errors",
+      "relevant_ids": [
+        "KB-102"
+      ]
+    },
+    {
+      "id": "retrieval-test-04",
+      "split": "test",
+      "category": "api",
+      "query": "Our connected client keeps waiting with no response",
+      "relevant_ids": [
+        "KB-102"
+      ]
+    },
+    {
+      "id": "retrieval-test-05",
+      "split": "test",
+      "category": "access",
+      "query": "Account access blocked after password problems",
+      "relevant_ids": [
+        "KB-103"
+      ]
+    },
+    {
+      "id": "retrieval-test-06",
+      "split": "test",
+      "category": "access",
+      "query": "The sign in form refuses to let me through",
+      "relevant_ids": [
+        "KB-103"
+      ]
+    },
+    {
+      "id": "retrieval-test-07",
+      "split": "test",
+      "category": "exports",
+      "query": "Export service status and supported account plans",
+      "relevant_ids": [
+        "KB-104"
+      ]
+    },
+    {
+      "id": "retrieval-test-08",
+      "split": "test",
+      "category": "exports",
+      "query": "The archive of our records will not finish generating",
+      "relevant_ids": [
+        "KB-104"
+      ]
+    },
+    {
+      "id": "retrieval-test-09",
+      "split": "test",
+      "category": "cancellation",
+      "query": "When does subscription cancellation become effective?",
+      "relevant_ids": [
+        "KB-105"
+      ]
+    },
+    {
+      "id": "retrieval-test-10",
+      "split": "test",
+      "category": "cancellation",
+      "query": "Please turn off the next recurring renewal",
+      "relevant_ids": [
+        "KB-105"
+      ]
+    },
+    {
+      "id": "retrieval-test-11",
+      "split": "test",
+      "category": "unknown",
+      "query": "No playbook explains this unusual interface issue",
+      "relevant_ids": [
+        "KB-106"
+      ]
+    },
+    {
+      "id": "retrieval-test-12",
+      "split": "test",
+      "category": "unknown",
+      "query": "Something odd happened but I cannot describe it yet",
+      "relevant_ids": [
+        "KB-106"
+      ]
+    }
+  ]
+}

@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from .agent import investigate, PROMPT
 from .tools import ROOT, SCHEMAS
+from .retrieval import configured_mode, RRF_K
+from .embeddings import MODEL as EMBEDDING_MODEL, DIMENSIONS
 
 DATASET = ROOT / "data/evaluation_cases.json"
 CHECKS = ("action", "tool_coverage", "tool_validity", "citation_coverage", "citation_validity", "verification_boundary",
@@ -125,12 +127,17 @@ def evaluate(cases, mode="demo", agent=investigate, repeats=1, max_consecutive_e
 
 
 def report_metadata(dataset, split, mode, selected, provider=None):
+    retrieval_mode = "bm25" if mode == "demo" else configured_mode()
     return {"schema_version": 1, "created_at": datetime.now(timezone.utc).isoformat(), "dataset_version": dataset["version"],
             "dataset_sha256": hashlib.sha256(DATASET.read_bytes()).hexdigest(), "dataset_provenance": dataset["provenance"],
             "prompt_sha256": hashlib.sha256(PROMPT.encode()).hexdigest(),
-            "engine_sha256": {name: hashlib.sha256((ROOT / "supportops" / name).read_bytes()).hexdigest() for name in ("agent.py", "tools.py", "verification.py", "evaluation.py")},
+            "engine_sha256": {name: hashlib.sha256((ROOT / "supportops" / name).read_bytes()).hexdigest() for name in ("agent.py", "tools.py", "verification.py", "retrieval.py", "embeddings.py", "evaluation.py")},
             "fixture_sha256": {name: hashlib.sha256((ROOT / "data" / name).read_bytes()).hexdigest() for name in ("knowledge.json", "accounts.json", "services.json")},
             "split": split, "mode": mode, "provider": provider, "selected_cases": selected,
+            "retrieval_mode": retrieval_mode,
+            "embedding_model": EMBEDDING_MODEL if retrieval_mode != "bm25" else None,
+            "embedding_dimensions": DIMENSIONS if retrieval_mode != "bm25" else None,
+            "rrf_k": RRF_K if retrieval_mode == "hybrid" else None,
             "configured_model": os.environ.get("GEMINI_MODEL", "gemini-3.8-flash") if provider == "gemini" else os.environ.get("OPENAI_MODEL", "gpt-4.1-mini") if provider == "openai" else "deterministic-demo",
             "limitations": ["Synthetic cases labeled against fixtures; not independently human-validated.", "Automatic checks measure routing, evidence coverage and English text proxies, not semantic answer correctness.", "A limited run does not represent the entire test split.", "Usage for failed requests may be missing; recorded token totals are not monetary cost."]}
 

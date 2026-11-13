@@ -14,5 +14,6 @@ jobs:
       - run: python evals.py
       - run: python evals.py --validate
       - run: python evals.py --suite quality --split dev --output reports/ci-demo-dev.json
+      - run: python scripts/benchmark_retrieval.py --modes bm25 --split dev --output reports/ci-retrieval-dev.json
       - run: python scripts/benchmark_jobs.py --jobs 20 --workers 2
       - run: python scripts/check_publish.py --tracked

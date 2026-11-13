@@ -2,7 +2,7 @@
 
 [![Agent checks](https://github.com/Ninjax26/relay-support-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/Ninjax26/relay-support-agent/actions/workflows/ci.yml)
 
-An evidence-driven support investigation agent built with **Python, Gemini/OpenAI tool calling, BM25 retrieval, and SQLite**. Relay plans an investigation, chooses scoped tools, checks its draft against evidence requirements, and proposes a review ticket for human approval.
+An evidence-driven support investigation agent built with **Python, Gemini/OpenAI tool calling, BM25/hybrid retrieval, and SQLite**. Relay plans an investigation, chooses scoped tools, checks its draft against evidence requirements, and proposes a review ticket for human approval.
 
 Example: a customer reports a duplicate charge. Relay retrieves the billing policy, inspects the payment ledger, drafts a cited answer, verifies its proposal, and waits for approval. Approval creates one local review ticket; it does not issue a refund.
 
@@ -10,7 +10,7 @@ Example: a customer reports a duplicate charge. Relay retrieves the billing poli
 
 - Model-selected tools with a **plan → observe → revise → verify → review** loop.
 - Gemini and OpenAI adapters; Gemini is the live launcher's default.
-- BM25 knowledge retrieval and inspectable evidence citations.
+- Offline BM25 plus optional Gemini semantic/hybrid retrieval with inspectable citations and explicit fallback.
 - Server-scoped account lookup and service-status tools using fictional fixtures.
 - Verification bound to the exact proposal; new evidence or plan changes invalidate it.
 - Transactional, idempotent approval and rejection in SQLite.
@@ -170,7 +170,7 @@ evals.py         Demo/live evaluation CLI
 - **Demo mode is scripted.** Only live mode uses LLM-selected tools.
 - Accounts, payments, incidents, and knowledge documents are **fictional fixtures**.
 - Approval creates a **local ticket**, not an external ticket or actual refund.
-- Retrieval is **lexical BM25**, not embedding/vector search.
+- BM25 is the offline default. Optional semantic/hybrid retrieval uses Gemini embeddings; comparative live relevance is not yet measured. See [retrieval strategies](docs/RETRIEVAL.md).
 - Verification is **mechanical**, not proof that every claim is supported.
 - Each completed step is saved. Interrupted model conversations are not resumed; an explicit retry starts a new linked run.
 - The server binds to loopback. Authentication and tenant authorization are not implemented; internet deployment requires a production server and access controls.
@@ -182,3 +182,5 @@ Credentials, runtime databases, local screenshots, caches, and private configura
 - [Execution workflow](docs/WORKFLOW.md)
 - [Provider configuration and troubleshooting](docs/EXTERNAL_SETUP.md)
 - [Job processing, recovery, and API reference](docs/SCALING.md)
+
+For independent relevance measurements and hidden-key comparison commands, see [retrieval strategies and evaluation](docs/RETRIEVAL.md). Demo mode remains offline; only explicitly configured live retrieval contacts the embedding provider.

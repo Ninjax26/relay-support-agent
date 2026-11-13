@@ -71,6 +71,8 @@ Human rates are reported separately from automatic rates, with review coverage. 
 
 ## Reproducibility and data handling
 
-Reports identify the dataset version/hash, prompt hash, engine/grader hashes, fixture hashes, selected split, subset status, provider, configured model, returned model, repeat number, and UTC run timestamp. Run the same frozen configuration when comparing models or prompts. Do not select only successful cases for comparison.
+Reports identify the configured retrieval strategy, embedding model/dimensions and fusion constant, plus the dataset version/hash, prompt hash, engine/grader hashes, fixture hashes, selected split, subset status, provider, configured model, returned model, repeat number, and UTC run timestamp. Run the same frozen configuration when comparing models or prompts. Do not select only successful cases for comparison.
 
 Generated reports contain answers and traces and stay in the ignored `reports/` directory. Provider credentials and private conversation metadata are not included. Do not commit live result artifacts or review files to the public repository. Published source includes only the synthetic case dataset and evaluation tooling.
+
+Retrieval relevance has a separate fixed-split benchmark; see [retrieval comparison](RETRIEVAL.md). A demo quality score does not evaluate embedding quality: demo investigations always use BM25.

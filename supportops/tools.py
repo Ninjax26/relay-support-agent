@@ -1,16 +1,10 @@
 """Read-only fixtures, lexical retrieval, and strict tool argument validation."""
 import json
-import math
-import re
-from collections import Counter
 from pathlib import Path
+from .retrieval import Retriever, configured_mode
 from .verification import check_proposal, CHECKS, LIMITATION
 
 ROOT = Path(__file__).resolve().parent.parent
-
-
-def tokens(text):
-    return re.findall(r"[a-z0-9]+", text.lower())
 
 
 class ToolError(ValueError):
@@ -18,11 +12,13 @@ class ToolError(ValueError):
 
 
 class Tools:
-    def __init__(self, account_id):
+    def __init__(self, account_id, retrieval_mode=None):
         self.account_id = account_id
         self.docs = json.loads((ROOT / "data/knowledge.json").read_text())
         self.accounts = json.loads((ROOT / "data/accounts.json").read_text())
         self.services = json.loads((ROOT / "data/services.json").read_text())
+        self.retriever = Retriever(self.docs, configured_mode() if retrieval_mode is None else retrieval_mode)
+        self.retrieval_events = []
         self.evidence = {}
         self.plan = None
         self.plan_history = []
@@ -66,22 +62,9 @@ class Tools:
         return self.verification
 
     def search(self, query):
-        """BM25 ranking: inexpensive, explainable retrieval for a small corpus."""
-        corpus = [tokens(d["title"] + " " + d["text"]) for d in self.docs]
-        average = sum(map(len, corpus)) / len(corpus)
-        results = []
-        for doc, words in zip(self.docs, corpus):
-            counts = Counter(words)
-            score = 0.0
-            for term in set(tokens(query)):
-                df = sum(term in item for item in corpus)
-                idf = math.log(1 + (len(corpus) - df + 0.5) / (df + 0.5))
-                tf = counts[term]
-                score += idf * tf * 2.5 / (tf + 1.5 * (0.25 + 0.75 * len(words) / average))
-            if score > 0:
-                results.append({**doc, "score": round(score, 3)})
-        results.sort(key=lambda d: (-d["score"], d["id"]))
-        selected = results[:3]
+        """Retrieve cited playbooks and preserve the actual retrieval strategy."""
+        selected, metadata = self.retriever.search(query)
+        self.retrieval_events.append(metadata)
         for doc in selected:
             self.evidence[doc["id"]] = doc
         return selected
