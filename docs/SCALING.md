@@ -20,8 +20,8 @@ SQLite WAL and indexed queue/history queries reduce contention and avoid loading
 - Every completed tool call saves its trace, evidence, plan, verification, token totals, and duration.
 - A normal provider failure marks the run `failed`; saved steps remain inspectable.
 - A crashed worker's job becomes `interrupted` after its lease expires and a worker scans the queue. This may take around 90 seconds. Heartbeats do not revive expired leases.
-- **Retry starts a new run** linked by `retry_of`. It does not resume a model conversation or replay a previous approval. The previous trace is retained.
-- Provider state and private model reasoning are not saved for resumption. No automatic crash replay is performed.
+- **Retry starts a new run** linked by `retry_of`. It begins a fresh conversation and does not replay a previous approval; the separate resume endpoint continues compatible saved live work on the same ID. The previous trace is retained.
+- Live provider exchanges and tool state are saved in a private checkpoint table. Explicit resume continues a compatible failed/interrupted live run; no automatic crash replay or approval replay is performed. See [conversation recovery](RECOVERY.md).
 
 Approval is possible only for `awaiting_approval` runs. Existing repeated approvals still return the same local ticket. Queued, running, failed, and interrupted runs cannot create tickets.
 
@@ -64,3 +64,7 @@ The command runs deterministic investigations against a temporary database and r
 ## Deployment constraints
 
 The application uses a loopback HTTP server and local SQLite storage. Internet deployment requires a production server, authentication and tenant authorization, provider-aware rate limits, hard request deadlines, log/trace retention, and a managed database/queue. Do not share SQLite over network filesystems. Different server processes sharing a database share queued work. Live jobs record their selected provider and are claimed only by workers with credentials configured for that provider; demo-only workers leave live work queued. Independent workspaces should still use separate databases.
+
+### Resume a live conversation
+
+`POST /api/runs/{id}/resume` with a stable `request_id` requeues compatible failed/interrupted live work on its existing ID. Original tool/model-request/time budgets apply, and every worker claim has a distinct lease owner. Private conversation state and public progress commit atomically; only public progress is returned by the API. See [recovery](RECOVERY.md) for compatibility, privacy and ambiguous in-flight behavior.

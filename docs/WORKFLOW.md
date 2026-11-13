@@ -33,8 +33,10 @@ Live mode uses Gemini or OpenAI to select tools based on observations. Demo mode
 
 ## Failure handling
 
-Provider failures preserve completed steps and mark the run failed. A worker crash leaves the run interrupted after lease expiration. Explicit retry starts a new linked investigation; it does not restore the previous model conversation or replay an approval.
+Provider failures preserve completed steps and mark the run failed. A worker crash leaves the run interrupted after lease expiration. Explicit resume restores a compatible saved live conversation on the same investigation ID. Fresh retry starts a new linked investigation. Neither path replays approval or ticket delivery.
 
 The agent permits at most 16 tool calls and checks its wall-clock budget between calls. Verification covers defined English patterns and does not establish semantic support for every generated claim. See [evidence verification](VERIFICATION.md) for supported checks and limitations. Retrieval defaults to offline BM25; see [retrieval strategies](RETRIEVAL.md) for semantic/hybrid configuration, cache behavior and the separate relevance benchmark. For worker configuration and recovery details, see [job processing](SCALING.md).
 
 For optional approved-ticket delivery, retries and local test-service setup, see [ticket delivery](TICKETING.md). Approval and delivery have separate states; delivery failures do not reverse a saved approval.
+
+For private live-conversation checkpoints, compatibility guards and cumulative recovery budgets, see [conversation recovery](RECOVERY.md).

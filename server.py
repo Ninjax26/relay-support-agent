@@ -86,6 +86,9 @@ class Handler(BaseHTTPRequestHandler):
                 request = {"message": body.get("message"), "account_id": body.get("account_id", "acct_demo"), "mode": body.get("mode", "demo")}
                 run = self.server.jobs.submit(request, body.get("request_id", uuid.uuid4().hex))
                 return self.send(202, run)
+            if path.startswith("/api/runs/") and path.endswith("/resume"):
+                run_id = path.split("/")[-2]
+                return self.send(202, self.server.jobs.resume(run_id, body.get("request_id", uuid.uuid4().hex)))
             if path.startswith("/api/runs/") and path.endswith("/ticket/retry"):
                 if not self.server.deliveries:
                     raise ValueError("Start Relay with the ticket sandbox to retry delivery")

@@ -164,6 +164,7 @@ evals.py         Demo/live evaluation CLI
 | GET | `/api/runs/{id}` | Saved investigation, evidence, plan, trace |
 | POST | `/api/runs` | Queue an investigation; returns 202. Include a unique `request_id` for duplicate protection |
 | POST | `/api/runs/{id}/retry` | Start a new linked run for a failed/interrupted investigation |
+| POST | `/api/runs/{id}/resume` | Continue a compatible saved live investigation on the same ID |
 | POST | `/api/runs/{id}/decision` | Submit `{ "decision": "approve" }` or `reject` |
 
 ## Scope and limitations
@@ -173,7 +174,7 @@ evals.py         Demo/live evaluation CLI
 - Approval creates a local review ticket. An optional connector delivers the approved proposal to an isolated local HTTP test service; it does not issue a refund or change an account.
 - BM25 is the offline default. Optional semantic/hybrid retrieval uses Gemini embeddings; comparative live relevance is not yet measured. See [retrieval strategies](docs/RETRIEVAL.md).
 - Verification is **mechanical**, not proof that every claim is supported.
-- Each completed step is saved. Interrupted model conversations are not resumed; an explicit retry starts a new linked run.
+- Completed live exchanges are saved privately and can resume on the same run after failure or interruption when configuration and budgets match. Fresh-run retry remains separate; see [conversation recovery](docs/RECOVERY.md).
 - The server binds to loopback. Authentication and tenant authorization are not implemented; internet deployment requires a production server and access controls.
 
 Credentials, runtime databases, local screenshots, caches, and private configuration are excluded from publication. A tracked-file allowlist and credential-pattern scan run in CI. Pattern scanning is defense in depth, not a guarantee of detecting every possible secret.
@@ -187,3 +188,5 @@ Credentials, runtime databases, local screenshots, caches, and private configura
 For independent relevance measurements and hidden-key comparison commands, see [retrieval strategies and evaluation](docs/RETRIEVAL.md). Demo mode remains offline; only explicitly configured live retrieval contacts the embedding provider.
 
 Optional approved-ticket delivery uses a durable outbox, bounded retries, and an idempotent local HTTP service. Start it with `python3 scripts/run_sandbox.py`; see [ticket delivery](docs/TICKETING.md) for setup, approval behavior and recovery.
+
+Live conversations can resume from private, atomic checkpoints without re-running committed tools. Original budgets, exact-proposal verification and human approval remain enforced; see [conversation recovery](docs/RECOVERY.md).

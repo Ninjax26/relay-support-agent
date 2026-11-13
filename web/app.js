@@ -4,6 +4,7 @@ let watchGeneration = 0;
 let nextCursor = null;
 let pendingSubmission = null;
 let retrySubmission = null;
+let resumeSubmission = null;
 const active = run => ["queued", "running"].includes(run.status);
 const delivering = run => ["pending", "sending"].includes(run.ticket_delivery?.state);
 const scenarios = {
@@ -63,7 +64,7 @@ function render(run) {
   $('empty-result').hidden=true; $('result').hidden=false; $('trace-section').hidden=false;
   $('result-state').textContent=run.status.replaceAll('_',' ').toUpperCase();
   $('result-meta').textContent=`${run.mode.toUpperCase()} · ${run.trace.length} TOOL CALLS · ${run.duration_ms} MS · ${run.usage.input_tokens+run.usage.output_tokens} TOKENS`;
-  $('run-context').textContent=`${run.account_id}${run.retry_of?' · Retry of '+run.retry_of.slice(0,8):''} — ${run.message}`;
+  $('run-context').textContent=`${run.account_id}${run.resume_count?' · Resumed '+run.resume_count+' time(s)':''}${run.retry_of?' · Retry of '+run.retry_of.slice(0,8):''} — ${run.message}`;
   $('reply-heading').textContent=run.answer?'Suggested customer reply':active(run)?'Investigation progress':'Investigation stopped';
   $('answer').textContent=run.answer?.summary || run.error || (run.status==='queued' ? 'Waiting for an investigation worker.' : 'Collecting evidence. The final reply will appear after verification.');
   $('action').textContent=run.answer?.action.replaceAll('_',' ').replace(/^./,x=>x.toUpperCase()) || '';
@@ -71,6 +72,7 @@ function render(run) {
   $('approve').closest('.approval').hidden=!run.answer;
   $('approve').closest('.approval').querySelector('.eyebrow').textContent=run.status==='awaiting_approval'?'HUMAN DECISION REQUIRED':'REVIEW DECISION RECORDED';
   $('retry-run').hidden=!['failed','interrupted'].includes(run.status);
+  $('resume-run').hidden=!(['failed','interrupted'].includes(run.status) && run.resume_available);
   const state=$('agent-state');
   state.replaceChildren();
   if(run.plan) {
@@ -130,6 +132,16 @@ $('investigate-form').onsubmit=async event=>{
     watch(run.id).catch(error=>feedback(error.message,true));
   } catch(error) { feedback(error.message,true); }
   finally { $('run').disabled=false; $('run').replaceChildren(document.createTextNode('Investigate issue'),element('span','↗')); }
+};
+$('resume-run').onclick=async()=>{
+  if(!current) return;
+  if(!resumeSubmission || resumeSubmission.runId!==current.id)resumeSubmission={runId:current.id,id:crypto.randomUUID()};
+  $('resume-run').disabled=true;
+  try {
+    const run=await api(`/api/runs/${current.id}/resume`,{request_id:resumeSubmission.id});
+    resumeSubmission=null;render(run);await history();watch(run.id).catch(error=>feedback(error.message,true));
+  } catch(error) { feedback(error.message,true); }
+  finally { $('resume-run').disabled=false; }
 };
 $('retry-run').onclick=async()=>{
   if(!current) return;

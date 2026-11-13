@@ -1,7 +1,7 @@
 """Bounded background workers over the persistent SQLite queue."""
 import threading
 import uuid
-from .agent import investigate, validate_request, provider_config
+from .agent import investigate, validate_request, provider_config, check_resume_configuration
 from .store import LeaseLost
 
 
@@ -13,6 +13,8 @@ class JobRunner:
         self.owner = uuid.uuid4().hex
         self.stop = threading.Event()
         self.threads = []
+        self.active_owners = set()
+        self.owners_lock = threading.Lock()
 
     def submit(self, request, request_key, retry_of=None):
         validate_request(request.get("message"), request.get("account_id"), request.get("mode"))
@@ -22,6 +24,24 @@ class JobRunner:
                 raise ValueError("Live mode requires a configured provider key. Run python3 run_live.py locally.")
             request = {**request, "provider": config["provider"]}
         return self.store.enqueue(request, request_key, self.capacity, retry_of)
+
+    def resume(self, run_id, request_key):
+        receipt = self.store.resume_receipt(run_id, request_key)
+        if receipt:
+            return receipt
+        try:
+            run = self.store.get(run_id)
+            state = self.store.load_agent_checkpoint(run_id)
+            if state is None or self.agent is not investigate:
+                raise ValueError("No compatible saved live conversation exists. Start a new investigation.")
+            check_resume_configuration(run["message"], run["account_id"], state)
+        except (ValueError, KeyError):
+            # A duplicate may have committed after our initial receipt read.
+            receipt = self.store.resume_receipt(run_id, request_key)
+            if receipt:
+                return receipt
+            raise
+        return self.store.resume_run(run_id, request_key, self.capacity)
 
     def start(self):
         if self.threads:
@@ -37,31 +57,47 @@ class JobRunner:
     def _heartbeat(self):
         while not self.stop.wait(10):
             try:
-                self.store.heartbeat(self.owner)
+                with self.owners_lock:
+                    owners = tuple(self.active_owners)
+                for owner in owners:
+                    self.store.heartbeat(owner)
             except Exception:
                 # A prolonged failure expires the lease and fences the worker.
                 continue
 
     def run_one(self):
         config = provider_config()
-        run = self.store.claim(self.owner, provider=config["provider"] if config["live_available"] else None)
+        owner = self.owner + "-" + uuid.uuid4().hex
+        run = self.store.claim(owner, provider=config["provider"] if config["live_available"] else None)
         if not run:
             return False
+        with self.owners_lock:
+            self.active_owners.add(owner)
         try:
-            result = self.agent(run["message"], run["account_id"], run["mode"],
-                                on_step=lambda snapshot: self.store.checkpoint(run["id"], self.owner, snapshot))
-            self.store.checkpoint(run["id"], self.owner, result, terminal=True)
+            if self.agent is investigate:
+                state = self.store.load_agent_checkpoint(run["id"], owner)
+                result = self.agent(run["message"], run["account_id"], run["mode"], resume_state=state,
+                                    on_checkpoint=lambda public, private: self.store.checkpoint(run["id"], owner, public, private_state=private),
+                                    on_step=None if run["mode"] == "live" else lambda public: self.store.checkpoint(run["id"], owner, public))
+            else:
+                # Legacy injected agents keep their trace-only callback contract.
+                result = self.agent(run["message"], run["account_id"], run["mode"],
+                                    on_step=lambda public: self.store.checkpoint(run["id"], owner, public))
+            self.store.checkpoint(run["id"], owner, result, terminal=True)
         except LeaseLost:
             pass
         except (ValueError, RuntimeError) as exc:
-            self._fail(run["id"], str(exc))
+            self._fail(run["id"], owner, str(exc))
         except Exception:
-            self._fail(run["id"], "Investigation failed unexpectedly. Saved steps remain available; no review ticket was created.")
+            self._fail(run["id"], owner, "Investigation failed unexpectedly. Saved steps remain available; no review ticket was created.")
+        finally:
+            with self.owners_lock:
+                self.active_owners.discard(owner)
         return True
 
-    def _fail(self, run_id, error):
+    def _fail(self, run_id, owner, error):
         try:
-            self.store.checkpoint(run_id, self.owner, {"status": "failed", "error": error}, terminal=True)
+            self.store.checkpoint(run_id, owner, {"status": "failed", "error": error}, terminal=True)
         except LeaseLost:
             pass
 

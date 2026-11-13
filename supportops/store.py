@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from contextlib import contextmanager
 from .ticketing import validate_destination, validate_payload
+from .checkpoints import validate_state, resumable, digest
 
 DEFAULT_DB = Path(__file__).resolve().parent.parent / "data/supportops.sqlite3"
 
@@ -29,6 +30,8 @@ class Store:
             CREATE TABLE IF NOT EXISTS tickets (id TEXT PRIMARY KEY, run_id TEXT UNIQUE NOT NULL, action TEXT NOT NULL, created_at TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS jobs (run_id TEXT PRIMARY KEY, state TEXT NOT NULL, owner TEXT, lease_until REAL,
             request_key TEXT UNIQUE NOT NULL, fingerprint TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS agent_checkpoints (run_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, checksum TEXT NOT NULL, state TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS resume_requests (request_key TEXT PRIMARY KEY, run_id TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS ticket_deliveries (
                 ticket_id TEXT PRIMARY KEY, run_id TEXT UNIQUE NOT NULL, destination TEXT NOT NULL,
                 idempotency_key TEXT UNIQUE NOT NULL, payload TEXT NOT NULL, state TEXT NOT NULL,
@@ -130,7 +133,7 @@ class Store:
             expired = db.execute("SELECT run_id FROM jobs WHERE state='running' AND lease_until<?", (time.time(),)).fetchall()
             for (run_id,) in expired:
                 run = json.loads(db.execute("SELECT payload FROM runs WHERE id=?", (run_id,)).fetchone()[0])
-                self._update(db, run, {"status": "interrupted", "error": "Worker stopped before completion. Saved steps remain available. Retry starts a new investigation."})
+                self._update(db, run, {"status": "interrupted", "error": "Worker stopped before completion. Resume a compatible saved live conversation, or retry as a new investigation."})
                 db.execute("UPDATE jobs SET state='interrupted',owner=NULL WHERE run_id=?", (run_id,))
             row = db.execute("""SELECT jobs.run_id,runs.payload FROM jobs JOIN runs ON runs.id=jobs.run_id
             WHERE jobs.state='queued' AND (?='any' OR json_extract(runs.payload,'$.mode')='demo'
@@ -146,7 +149,7 @@ class Store:
             now = time.time()
             db.execute("UPDATE jobs SET lease_until=? WHERE state='running' AND owner=? AND lease_until>=?", (now + 90, owner, now))
 
-    def checkpoint(self, run_id, owner, changes, terminal=False):
+    def checkpoint(self, run_id, owner, changes, terminal=False, private_state=None):
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             job = db.execute("SELECT state,owner,lease_until FROM jobs WHERE run_id=?", (run_id,)).fetchone()
@@ -154,6 +157,13 @@ class Store:
                 raise LeaseLost("Worker no longer owns this investigation")
             run = json.loads(db.execute("SELECT payload FROM runs WHERE id=?", (run_id,)).fetchone()[0])
             self._update(db, run, changes)
+            if private_state is not None:
+                validate_state(private_state)
+                encoded = json.dumps(private_state, allow_nan=False)
+                db.execute("INSERT INTO agent_checkpoints VALUES (?,1,?,?) ON CONFLICT(run_id) DO UPDATE SET revision=revision+1,checksum=excluded.checksum,state=excluded.state",
+                           (run_id, digest(private_state), encoded))
+            if terminal and run["status"] == "awaiting_approval":
+                db.execute("DELETE FROM agent_checkpoints WHERE run_id=?", (run_id,))
             if terminal:
                 db.execute("UPDATE jobs SET state=?,owner=NULL,lease_until=NULL WHERE run_id=?", (run["status"], run_id))
             else:
@@ -250,4 +260,61 @@ class Store:
                 db.execute("UPDATE ticket_deliveries SET state='pending',cycle_attempts=0,next_attempt=0,error_code=NULL,updated_at=? WHERE run_id=?",
                            (datetime.now(timezone.utc).isoformat(), run_id))
                 self._touch_delivery(db, run_id)
+        return self.get(run_id)
+
+    def load_agent_checkpoint(self, run_id, owner=None):
+        with self.connect() as db:
+            row = db.execute("SELECT c.state,c.checksum,j.state,j.owner,j.lease_until FROM jobs j LEFT JOIN agent_checkpoints c ON c.run_id=j.run_id WHERE j.run_id=?", (run_id,)).fetchone()
+        if not row:
+            raise KeyError("Run not found")
+        if owner is not None:
+            if row[2] != "running" or row[3] != owner or row[4] < time.time():
+                raise LeaseLost("Worker no longer owns this conversation")
+        elif row[2] not in {"failed", "interrupted"}:
+            raise ValueError("Only failed or interrupted live investigations can be resumed")
+        if row[0] is None:
+            return None
+        try:
+            state = json.loads(row[0])
+            validate_state(state)
+            if digest(state) != row[1]:
+                raise ValueError()
+        except (ValueError, TypeError):
+            raise ValueError("Saved conversation is invalid. Start a new investigation.") from None
+        return state
+
+    def resume_receipt(self, run_id, request_key):
+        if not isinstance(request_key, str) or not 1 <= len(request_key) <= 128:
+            raise ValueError("Provide a request_id of 1–128 characters")
+        with self.connect() as db:
+            row = db.execute("SELECT run_id FROM resume_requests WHERE request_key=?", (request_key,)).fetchone()
+        if row and row[0] != run_id:
+            raise ValueError("Resume request_id was already used for another investigation")
+        return self.get(run_id) if row else None
+
+    def resume_run(self, run_id, request_key, capacity=100):
+        # Configuration is checked by JobRunner before this atomic state transition.
+        if not isinstance(request_key, str) or not 1 <= len(request_key) <= 128:
+            raise ValueError("Provide a request_id of 1–128 characters")
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            receipt = db.execute("SELECT run_id FROM resume_requests WHERE request_key=?", (request_key,)).fetchone()
+            if receipt:
+                if receipt[0] != run_id:
+                    raise ValueError("Resume request_id was already used for another investigation")
+                return self.get(run_id)
+            row = db.execute("SELECT r.payload,j.state,c.state,c.checksum FROM runs r JOIN jobs j ON j.run_id=r.id LEFT JOIN agent_checkpoints c ON c.run_id=r.id WHERE r.id=?", (run_id,)).fetchone()
+            if not row:
+                raise KeyError("Run not found")
+            run = json.loads(row[0])
+            if run["mode"] != "live" or run["status"] not in {"failed", "interrupted"} or row[1] != run["status"] or row[2] is None:
+                raise ValueError("No resumable failed or interrupted live conversation exists")
+            state = validate_state(json.loads(row[2]))
+            if digest(state) != row[3] or not resumable(state):
+                raise ValueError("Saved conversation is invalid or exhausted its budget. Start a new investigation.")
+            if db.execute("SELECT COUNT(*) FROM jobs WHERE state IN ('queued','running')").fetchone()[0] >= capacity:
+                raise QueueFull("Investigation queue is full. Wait for a job to finish and retry.")
+            db.execute("INSERT INTO resume_requests VALUES (?,?)", (request_key, run_id))
+            db.execute("UPDATE jobs SET state='queued',owner=NULL,lease_until=NULL WHERE run_id=?", (run_id,))
+            self._update(db, run, {"status": "queued", "error": None, "resume_count": run.get("resume_count", 0) + 1})
         return self.get(run_id)
