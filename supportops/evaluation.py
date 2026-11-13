@@ -128,7 +128,7 @@ def report_metadata(dataset, split, mode, selected, provider=None):
     return {"schema_version": 1, "created_at": datetime.now(timezone.utc).isoformat(), "dataset_version": dataset["version"],
             "dataset_sha256": hashlib.sha256(DATASET.read_bytes()).hexdigest(), "dataset_provenance": dataset["provenance"],
             "prompt_sha256": hashlib.sha256(PROMPT.encode()).hexdigest(),
-            "engine_sha256": {name: hashlib.sha256((ROOT / "supportops" / name).read_bytes()).hexdigest() for name in ("agent.py", "tools.py", "evaluation.py")},
+            "engine_sha256": {name: hashlib.sha256((ROOT / "supportops" / name).read_bytes()).hexdigest() for name in ("agent.py", "tools.py", "verification.py", "evaluation.py")},
             "fixture_sha256": {name: hashlib.sha256((ROOT / "data" / name).read_bytes()).hexdigest() for name in ("knowledge.json", "accounts.json", "services.json")},
             "split": split, "mode": mode, "provider": provider, "selected_cases": selected,
             "configured_model": os.environ.get("GEMINI_MODEL", "gemini-3.8-flash") if provider == "gemini" else os.environ.get("OPENAI_MODEL", "gpt-4.1-mini") if provider == "openai" else "deterministic-demo",

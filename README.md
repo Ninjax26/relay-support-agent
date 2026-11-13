@@ -104,7 +104,7 @@ flowchart TD
 
 The model chooses tools based on observations. Python validates and executes requests. The model cannot select another customer account or invoke arbitrary shell, SQL, payment, or account-write tools.
 
-`verify_case` checks retrieved citations, action-specific evidence coverage, known invoice/incident identifiers, and limited prohibited action claims. Failed checks return to the model. `complete_case` accepts only the exact verified draft after the latest evidence or plan change.
+`verify_case` checks both the reply and review reason against cited evidence: invoice amounts and counts, account plan and lock state, export eligibility, service status and region, identifiers, and recognized prohibited action claims. Failed checks return specific feedback to the model. These deterministic English rules do not establish full semantic correctness. See [Evidence verification](docs/VERIFICATION.md) for coverage and limits. `complete_case` accepts only the exact verified draft after the latest evidence or plan change.
 
 The loop permits **16 tool calls**, checks a **180-second** wall-clock budget between calls, and uses configurable workers (**two by default**) behind a persistent queue. The wall-clock check is not a hard cancellation deadline for an in-flight provider request. Transient Gemini HTTP 500/502/503/504 errors receive up to three total attempts with bounded backoff. Retries do not replay local tool actions.
 

@@ -82,8 +82,9 @@ function render(run) {
       run.plan.missing_information.forEach(info=>state.append(element('p',info)));
     }
     const review=element('details');
-    review.append(element('summary',run.verification?.passed ? 'Mechanical verification passed · inspect checks' : 'Verification not available'));
+    review.append(element('summary',run.verification?.passed ? 'Evidence checks passed · review required' : run.verification ? 'Draft needs correction · inspect feedback' : 'Verification not available'));
     review.append(element('p',run.verification?.checks.join(' · ') || ''));
+    (run.verification?.issues || []).forEach(issue=>review.append(element('p',issue)));
     review.append(element('p',run.verification?.limitation || ''));
     state.append(review);
   } else {

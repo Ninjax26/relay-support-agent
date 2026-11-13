@@ -4,6 +4,7 @@ import math
 import re
 from collections import Counter
 from pathlib import Path
+from .verification import check_proposal, CHECKS, LIMITATION
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -53,18 +54,14 @@ class Tools:
                 issues.append(f"Retrieve and cite {ref} before proposing {action}.")
         if not any(ref.startswith("KB-") for ref in refs):
             issues.append("Retrieve and cite a knowledge playbook.")
+        findings = check_proposal(proposal, {ref: self.evidence[ref] for ref in refs if ref in self.evidence})
+        issues.extend(finding["message"] for finding in findings)
         summary = proposal["summary"]
-        if re.search(r"\b(?:I|we) (?:have )?(?:issued|processed|completed) (?:a |the |your )?refund|(?<!no )\brefund (?:has been|was) issued|\b(?:I|we) (?:have )?(?:unlocked|cancelled|canceled) (?:your|the) (?:account|subscription)", summary, re.I):
-            issues.append("Do not claim customer-impacting actions have been executed.")
-        facts = json.dumps(list(self.evidence.values()))
-        for identifier in set(re.findall(r"\b(?:INV|INC)-[A-Za-z0-9]+\b", summary)):
-            if identifier not in facts:
-                issues.append(f"Identifier {identifier} is not present in retrieved evidence.")
         if action == "support_review" and "export" in summary.lower():
             for ref in {"ACCOUNT", "KB-104", "STATUS-exports"} - set(refs):
                 issues.append(f"Retrieve and cite {ref} for an export investigation.")
-        self.verification = {"passed": not issues, "issues": issues, "checks": ["plan present", "retrieved citations", "action evidence coverage", "known incident/invoice IDs", "limited action-claim policy"],
-                             "limitation": "These are mechanical checks, not proof of semantic groundedness."}
+        self.verification = {"passed": not issues, "issues": issues, "checks": ["plan present", "retrieved citations", "action evidence coverage", *CHECKS], "findings": findings,
+                             "limitation": LIMITATION}
         self.verified_proposal = json.dumps(proposal, sort_keys=True) if not issues else None
         return self.verification
 
@@ -108,9 +105,11 @@ class Tools:
             self.plan = args
             self.plan_history.append(args)
             self.verified_proposal = None
+            self.verification = None
             return {"recorded": True, "revision": len(self.plan_history), **args}
         if name in {"search_knowledge", "lookup_account", "check_service"}:
             self.verified_proposal = None
+            self.verification = None
         if name == "search_knowledge":
             return self.search(args["query"])
         if name == "lookup_account":
@@ -149,7 +148,7 @@ DESCRIPTIONS = {
     "lookup_account": "Read the current run's scoped customer account and invoice ledger.",
     "check_service": "Read current demo service status. service must be api or exports.",
     "complete_case": "Finish using the exact proposal that passed verify_case after the latest evidence or plan change. Does not execute the action. action must be billing_review, engineering_escalation, identity_review, or support_review.",
-    "verify_case": "Check a draft proposal against required evidence and limited action policies. If passed is false, collect missing evidence or revise, then verify again. Cite retrieved evidence IDs. This is a mechanical checker, not proof of truth.",
+    "verify_case": "Check both draft reply and reason against cited evidence: invoice amounts/counts, account plan/lock, service state/region and action policies. If passed is false, collect missing evidence or revise, then verify again. Cite retrieved evidence IDs. This is a mechanical checker, not proof of truth.",
 }
 
 
