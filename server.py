@@ -9,6 +9,8 @@ from supportops.agent import provider_config
 from supportops.retrieval import configured_mode
 from supportops.store import Store, QueueFull
 from supportops.jobs import JobRunner
+from supportops.ticketing import TicketConnector
+from supportops.deliveries import DeliveryRunner
 
 ROOT = Path(__file__).parent
 
@@ -42,7 +44,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/health":
             return self.send(200, {"status": "ok", "workers": self.server.jobs.workers, "queue_capacity": self.server.jobs.capacity, **self.server.store.metrics()})
         if path == "/api/config":
-            return self.send(200, {**provider_config(), "retrieval_mode": configured_mode(), "accounts": ["acct_demo", "acct_basic", "acct_locked"]})
+            return self.send(200, {**provider_config(), "retrieval_mode": configured_mode(), "ticket_connector": "sandbox" if self.server.deliveries else "local_only", "accounts": ["acct_demo", "acct_basic", "acct_locked"]})
         if path == "/api/runs":
             try:
                 params = parse_qs(parsed.query)
@@ -84,6 +86,11 @@ class Handler(BaseHTTPRequestHandler):
                 request = {"message": body.get("message"), "account_id": body.get("account_id", "acct_demo"), "mode": body.get("mode", "demo")}
                 run = self.server.jobs.submit(request, body.get("request_id", uuid.uuid4().hex))
                 return self.send(202, run)
+            if path.startswith("/api/runs/") and path.endswith("/ticket/retry"):
+                if not self.server.deliveries:
+                    raise ValueError("Start Relay with the ticket sandbox to retry delivery")
+                run_id = path.split("/")[-3]
+                return self.send(200, self.server.store.retry_delivery(run_id, self.server.deliveries.connector.destination))
             if path.startswith("/api/runs/") and path.endswith("/retry"):
                 run_id = path.split("/")[-2]
                 previous = self.server.store.get(run_id)
@@ -91,7 +98,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(202, self.server.jobs.submit(request, body.get("request_id", uuid.uuid4().hex), retry_of=run_id))
             if path.startswith("/api/runs/") and path.endswith("/decision"):
                 run_id = path.split("/")[-2]
-                return self.send(200, self.server.store.decide(run_id, body.get("decision")))
+                return self.send(200, self.server.store.decide(run_id, body.get("decision"), delivery_target=self.server.deliveries.connector.destination if self.server.deliveries else None))
             return self.send(404, {"error": "Not found"})
         except (ValueError, TypeError) as exc:
             return self.send(400, {"error": str(exc)})
@@ -105,15 +112,28 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(500, {"error": "Investigation failed. No review decision was committed."})
 
 
-def create_server(port=8000, store=None, workers=None, capacity=None, start_workers=True):
+class RelayServer(ThreadingHTTPServer):
+    def server_close(self):
+        if getattr(self, "deliveries", None):
+            self.deliveries.close()
+        if getattr(self, "jobs", None):
+            self.jobs.close()
+        super().server_close()
+
+
+def create_server(port=8000, store=None, workers=None, capacity=None, start_workers=True, ticket_connector=None):
+    ticket_connector = ticket_connector or TicketConnector.from_environment()
     store = store or Store(os.environ.get("RELAY_DB_PATH", str(ROOT / "data/supportops.sqlite3")))
     jobs = JobRunner(store, workers if workers is not None else int(os.environ.get("RELAY_WORKERS", "2")),
                      capacity if capacity is not None else int(os.environ.get("RELAY_QUEUE_CAPACITY", "100")))
-    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    server = RelayServer(("127.0.0.1", port), Handler)
     server.daemon_threads = True
     server.store, server.jobs = store, jobs
+    server.deliveries = DeliveryRunner(store, ticket_connector) if ticket_connector else None
     if start_workers:
         jobs.start()
+        if server.deliveries:
+            server.deliveries.start()
     return server
 
 
@@ -125,5 +145,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         pass
     finally:
-        server.jobs.close()
         server.server_close()

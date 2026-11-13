@@ -2,7 +2,7 @@
 
 [![Agent checks](https://github.com/Ninjax26/relay-support-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/Ninjax26/relay-support-agent/actions/workflows/ci.yml)
 
-An evidence-driven support investigation agent built with **Python, Gemini/OpenAI tool calling, BM25/hybrid retrieval, and SQLite**. Relay plans an investigation, chooses scoped tools, checks its draft against evidence requirements, and proposes a review ticket for human approval.
+An evidence-driven support investigation agent built with **Python, Gemini/OpenAI tool calling, BM25/hybrid retrieval, and SQLite**. Relay plans an investigation, chooses scoped tools, checks its draft against evidence requirements, and proposes a review ticket for human approval. Approved proposals can be delivered to an isolated local test ticket service.
 
 Example: a customer reports a duplicate charge. Relay retrieves the billing policy, inspects the payment ledger, drafts a cited answer, verifies its proposal, and waits for approval. Approval creates one local review ticket; it does not issue a refund.
 
@@ -159,7 +159,8 @@ evals.py         Demo/live evaluation CLI
 | --- | --- | --- |
 | GET | `/api/config` | Provider availability and fixture accounts; no credentials |
 | GET | `/api/runs?limit=20&before=<id>` | Paginated summaries and next cursor |
-| GET | `/api/health` | Worker configuration, queue counts, and local ticket count |
+| GET | `/api/health` | Worker configuration, queue counts, local tickets and delivery-state counts |
+| POST | `/api/runs/{id}/ticket/retry` | Retry a failed approved-ticket delivery without repeating the investigation |
 | GET | `/api/runs/{id}` | Saved investigation, evidence, plan, trace |
 | POST | `/api/runs` | Queue an investigation; returns 202. Include a unique `request_id` for duplicate protection |
 | POST | `/api/runs/{id}/retry` | Start a new linked run for a failed/interrupted investigation |
@@ -169,7 +170,7 @@ evals.py         Demo/live evaluation CLI
 
 - **Demo mode is scripted.** Only live mode uses LLM-selected tools.
 - Accounts, payments, incidents, and knowledge documents are **fictional fixtures**.
-- Approval creates a **local ticket**, not an external ticket or actual refund.
+- Approval creates a local review ticket. An optional connector delivers the approved proposal to an isolated local HTTP test service; it does not issue a refund or change an account.
 - BM25 is the offline default. Optional semantic/hybrid retrieval uses Gemini embeddings; comparative live relevance is not yet measured. See [retrieval strategies](docs/RETRIEVAL.md).
 - Verification is **mechanical**, not proof that every claim is supported.
 - Each completed step is saved. Interrupted model conversations are not resumed; an explicit retry starts a new linked run.
@@ -184,3 +185,5 @@ Credentials, runtime databases, local screenshots, caches, and private configura
 - [Job processing, recovery, and API reference](docs/SCALING.md)
 
 For independent relevance measurements and hidden-key comparison commands, see [retrieval strategies and evaluation](docs/RETRIEVAL.md). Demo mode remains offline; only explicitly configured live retrieval contacts the embedding provider.
+
+Optional approved-ticket delivery uses a durable outbox, bounded retries, and an idempotent local HTTP service. Start it with `python3 scripts/run_sandbox.py`; see [ticket delivery](docs/TICKETING.md) for setup, approval behavior and recovery.

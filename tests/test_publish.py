@@ -13,6 +13,10 @@ class PublicationTests(unittest.TestCase):
         self.assertIn("Google API key", result)
         self.assertNotIn(key, repr(result))
 
+    def test_nonempty_sandbox_credential_assignment_is_blocked(self):
+        self.assertIn("nonempty credential assignment", inspect("server.py", b"RELAY_TICKET_TOKEN=local-test-value\n"))
+        self.assertEqual(inspect(".env.example", b"RELAY_TICKET_TOKEN=\nRELAY_TICKET_URL=\n"), [])
+
     def test_empty_environment_template_is_allowed(self):
         self.assertEqual(inspect(".env.example", b"GEMINI_API_KEY=\nOPENAI_API_KEY=\nPORT=8000\n"), [])
 

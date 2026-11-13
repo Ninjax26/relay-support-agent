@@ -10,7 +10,7 @@ Relay processes support investigations through a persistent queue, a bounded too
 4. **Retrieve and inspect:** `search_knowledge` retrieves policy documents using BM25 by default. Live mode optionally uses normalized Gemini embeddings or hybrid rank fusion; failed embedding access falls back explicitly to BM25. Saved search events record the requested and effective strategies. Account and service tools return scoped fixture data. Observations are returned to the model for subsequent tool selection.
 5. **Verify:** `verify_case` checks both the reply and review reason against cited structured records, including recognized payment amounts/counts, account plan and lock state, export eligibility, service status/region, identifiers, and prohibited action claims. It returns actionable issues and structured findings for recognized contradictions. New observations or plan changes clear the previous verification result. Failed checks return to the agent for revision.
 6. **Complete:** `complete_case` accepts only the exact verified proposal after the latest evidence or plan change. The investigation enters `awaiting_approval`.
-7. **Review:** A human approves or rejects the proposal. Approval creates one local review ticket; repeated approvals return the same ticket.
+7. **Review:** A human approves or rejects the proposal. Approval creates one local review ticket; repeated approvals return the same ticket. With the local test connector enabled, approval atomically queues an immutable delivery job; a worker sends it to an authenticated HTTP ticket service and records its external ID.
 
 Each completed tool call checkpoints its trace, evidence, plan, verification, token totals, and duration. The browser polls the saved snapshot and restores the selected investigation after reload.
 
@@ -36,3 +36,5 @@ Live mode uses Gemini or OpenAI to select tools based on observations. Demo mode
 Provider failures preserve completed steps and mark the run failed. A worker crash leaves the run interrupted after lease expiration. Explicit retry starts a new linked investigation; it does not restore the previous model conversation or replay an approval.
 
 The agent permits at most 16 tool calls and checks its wall-clock budget between calls. Verification covers defined English patterns and does not establish semantic support for every generated claim. See [evidence verification](VERIFICATION.md) for supported checks and limitations. Retrieval defaults to offline BM25; see [retrieval strategies](RETRIEVAL.md) for semantic/hybrid configuration, cache behavior and the separate relevance benchmark. For worker configuration and recovery details, see [job processing](SCALING.md).
+
+For optional approved-ticket delivery, retries and local test-service setup, see [ticket delivery](TICKETING.md). Approval and delivery have separate states; delivery failures do not reverse a saved approval.

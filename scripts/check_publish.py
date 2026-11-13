@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 ROOT_FILES = {"README.md", ".gitignore", ".env.example", "server.py", "run_live.py", "evals.py"}
-DOCS = {"WORKFLOW.md", "EXTERNAL_SETUP.md", "SCALING.md", "EVALUATION.md", "VERIFICATION.md", "RETRIEVAL.md"}
+DOCS = {"WORKFLOW.md", "EXTERNAL_SETUP.md", "SCALING.md", "EVALUATION.md", "VERIFICATION.md", "RETRIEVAL.md", "TICKETING.md"}
 PATTERNS = {
     "Google API key": r"AIza[0-9A-Za-z_-]{30,}",
     "OpenAI key": r"\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}",
@@ -41,7 +41,7 @@ def inspect(path, content):
     for label, pattern in PATTERNS.items():
         if re.search(pattern, value):
             problems.append(label)
-    for match in re.finditer(r"(?m)^[ \t]*(?:export[ \t]+)?(?:GEMINI_API_KEY|OPENAI_API_KEY|GH_TOKEN|GITHUB_TOKEN)[ \t]*=[ \t]*([^\r\n]*)$", value):
+    for match in re.finditer(r"(?m)^[ \t]*(?:export[ \t]+)?(?:GEMINI_API_KEY|OPENAI_API_KEY|GH_TOKEN|GITHUB_TOKEN|RELAY_TICKET_TOKEN)[ \t]*=[ \t]*([^\r\n]*)$", value):
         candidate = match[1].strip().strip("\"'")
         if candidate not in {"", "your-key", "your-api-key"}:
             problems.append("nonempty credential assignment")

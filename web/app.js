@@ -5,6 +5,7 @@ let nextCursor = null;
 let pendingSubmission = null;
 let retrySubmission = null;
 const active = run => ["queued", "running"].includes(run.status);
+const delivering = run => ["pending", "sending"].includes(run.ticket_delivery?.state);
 const scenarios = {
   billing: ['acct_demo', 'I was charged twice for the same invoice. Can you investigate and arrange a refund?'],
   outage: ['acct_demo', 'Our production API keeps returning 503 errors and timeouts. Is there an outage?'],
@@ -44,12 +45,13 @@ async function watch(id) {
       if(generation!==watchGeneration) return;
       failures=0;
       if(version!==run.version || version===null) { render(run); version=run.version; }
-      if(!active(run)) {
-        feedback(run.error || (['approved','rejected'].includes(run.status)?'Review decision saved.':'Investigation saved. Review the evidence before approving.'),!!run.error);
+      if(!active(run) && !delivering(run)) {
+        feedback(run.error || (run.ticket_delivery?.state==='failed'?'Ticket delivery failed. Approval is saved; retry delivery below.':['approved','rejected'].includes(run.status)?'Review decision saved.':'Investigation saved. Review the evidence before approving.'),!!run.error || run.ticket_delivery?.state==='failed');
         await history();
         return;
       }
-      feedback(run.status==='queued' ? 'Investigation queued. You can submit another issue while workers are busy.' : `Investigation running · ${run.trace.length} saved steps. You can leave and return to this run.`);
+      if(delivering(run)) { feedback('Approval saved. Delivering the review ticket to the local test service…'); }
+      else feedback(run.status==='queued' ? 'Investigation queued. You can submit another issue while workers are busy.' : `Investigation running · ${run.trace.length} saved steps. You can leave and return to this run.`);
     } catch(error) {
       if(++failures>=5) { feedback('Progress connection lost. The job may still be running. Select it from history or refresh to reconnect.',true); return; }
     }
@@ -99,7 +101,12 @@ function render(run) {
   });
   const pending=run.status==='awaiting_approval';
   $('approve').disabled=!pending; $('reject').disabled=!pending;
-  $('decision-status').textContent=run.ticket_id ? `Approved · ${run.ticket_id} created locally.` : run.status==='rejected' ? 'Proposal rejected. No ticket was created.' : 'Awaiting your review. No action has been executed.';
+  const delivery=run.ticket_delivery;
+  $('retry-ticket').hidden=delivery?.state!=='failed';
+  const deliveryText=delivery?.state==='delivered' ? `Delivered to test service · ${delivery.external_id}.` :
+    delivery?.state==='failed' ? `Test ticket delivery failed (${delivery.error_code}). Approval is saved; retry delivery below.` :
+    delivery ? 'Approval saved · test ticket delivery pending.' : '';
+  $('decision-status').textContent=run.ticket_id ? `${run.ticket_id} · ${deliveryText || 'Local review ticket created.'}` : run.status==='rejected' ? 'Proposal rejected. No ticket was created.' : 'Awaiting your review. No action has been executed.';
   $('trace-count').textContent=`${run.trace.length} OBSERVABLE STEPS`;
   $('trace').replaceChildren();
   run.trace.forEach(step=>{
@@ -140,9 +147,16 @@ document.querySelectorAll('[data-scenario]').forEach(button=>button.onclick=()=>
 async function decide(decision) {
   if(!current) return;
   $('approve').disabled=true; $('reject').disabled=true;
-  try { render(await api(`/api/runs/${current.id}/decision`,{decision}));await history();feedback(decision==='approve'?'Local review ticket created.':'Proposal rejected.'); }
+  try { const run=await api(`/api/runs/${current.id}/decision`,{decision});render(run);await history();feedback(decision==='approve'?'Approval saved.':'Proposal rejected.');if(delivering(run))watch(run.id).catch(error=>feedback(error.message,true)); }
   catch(error) { feedback(error.message,true);render(current); }
 }
+$('retry-ticket').onclick=async()=>{
+  if(!current) return;
+  $('retry-ticket').disabled=true;
+  try { const run=await api(`/api/runs/${current.id}/ticket/retry`,{});render(run);watch(run.id).catch(error=>feedback(error.message,true)); }
+  catch(error) { feedback(error.message,true); }
+  finally { $('retry-ticket').disabled=false; }
+};
 $('approve').onclick=()=>decide('approve');$('reject').onclick=()=>decide('reject');
 $('refresh').onclick=()=>{history().catch(error=>feedback(error.message,true));if(current)watch(current.id).catch(error=>feedback(error.message,true));};
 $('download').onclick=()=>{if(!current)return;const url=URL.createObjectURL(new Blob([JSON.stringify(current,null,2)],{type:'application/json'}));const link=element('a');link.href=url;link.download=`relay-${current.id}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
@@ -150,7 +164,7 @@ $('workflow-nav').onclick=()=>{$('workflow').hidden=!$('workflow').hidden;$('wor
 $('workflow-nav').setAttribute('aria-expanded','false');$('workflow-nav').setAttribute('aria-controls','workflow');
 $('workspace-nav').onclick=()=>{$('message').focus();};
 $('mode').onchange=()=>{$('mode-tag').textContent=$('mode').value==='demo'?'DETERMINISTIC DEMO':'LIVE LLM';};
-api('/api/config').then(config=>{if(!config.live_available)$('mode').options[1].disabled=true;}).catch(error=>feedback(error.message,true));
+api('/api/config').then(config=>{if(!config.live_available)$('mode').options[1].disabled=true;if(config.ticket_connector==='sandbox')$('approval-help').textContent='Approval creates a review ticket and sends the approved proposal to the local test ticket service. Customer accounts and payments stay unchanged.';}).catch(error=>feedback(error.message,true));
 history().catch(error=>feedback(error.message,true));
 
 const lastRun=localStorage.getItem("relay-last-run");
