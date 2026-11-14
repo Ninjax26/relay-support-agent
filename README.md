@@ -16,7 +16,7 @@ Example: a customer reports a duplicate charge. Relay retrieves the billing poli
 - Transactional, idempotent approval and rejection in SQLite.
 - Charcoal and burnt-orange UI with saved runs, plans, evidence, traces, and JSON export.
 - Persistent background queue, configurable workers, per-step checkpoints, duplicate-submission protection, and explicit retry.
-- Paginated history, browser progress polling, reload recovery, and local queue health metrics.
+- Paginated history, SSE progress with polling fallback, cooperative cancellation, reload recovery, and local queue health metrics.
 - Scripted demo mode, provider contract tests, evaluation CLI, and GitHub Actions.
 - Bounded transient-error retries and distinct connection, authentication, and quota errors.
 
@@ -165,6 +165,8 @@ evals.py         Demo/live evaluation CLI
 | POST | `/api/runs` | Queue an investigation; returns 202. Include a unique `request_id` for duplicate protection |
 | POST | `/api/runs/{id}/retry` | Start a new linked run for a failed/interrupted investigation |
 | POST | `/api/runs/{id}/resume` | Continue a compatible saved live investigation on the same ID |
+| POST | `/api/runs/{id}/cancel` | Cancel a queued run immediately or request cooperative cancellation of running work |
+| GET | `/api/runs/{id}/events` | Stream versioned public run snapshots over SSE |
 | POST | `/api/runs/{id}/decision` | Submit `{ "decision": "approve" }` or `reject` |
 
 ## Scope and limitations
@@ -190,3 +192,7 @@ For independent relevance measurements and hidden-key comparison commands, see [
 Optional approved-ticket delivery uses a durable outbox, bounded retries, and an idempotent local HTTP service. Start it with `python3 scripts/run_sandbox.py`; see [ticket delivery](docs/TICKETING.md) for setup, approval behavior and recovery.
 
 Live conversations can resume from private, atomic checkpoints without re-running committed tools. Original budgets, exact-proposal verification and human approval remain enforced; see [conversation recovery](docs/RECOVERY.md).
+
+### Streaming and cancellation
+
+The browser uses server-sent events for saved progress, with polling fallback if the stream fails. `POST /api/runs/{id}/cancel` cancels queued work immediately and requests cancellation of running work. The worker stops at its next tool/model boundary; an in-flight provider request may finish or time out first. A cancelled run cannot be approved or resumed, and it creates no ticket. Closing the browser stream alone does not cancel the job.

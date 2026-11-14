@@ -1,7 +1,9 @@
-"""Local support operations server. Run: python3 server.py."""
+"""Local Relay server. Run: python3 server.py."""
 import json
 import os
 import uuid
+import time
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -53,6 +55,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(400, {"error": str(exc)})
             except KeyError:
                 return self.send(404, {"error": "History cursor not found"})
+        if path.startswith("/api/runs/") and path.endswith("/events"):
+            try:
+                return self.stream_run(path.split("/")[-2])
+            except KeyError:
+                return self.send(404, {"error": "Run not found"})
         if path.startswith("/api/runs/"):
             try:
                 return self.send(200, self.server.store.get(path.rsplit("/", 1)[-1]))
@@ -63,6 +70,34 @@ class Handler(BaseHTTPRequestHandler):
             file, content_type = assets[path]
             return self.send(200, (ROOT / "web" / file).read_bytes(), content_type)
         return self.send(404, {"error": "Not found"})
+
+    def stream_run(self, run_id):
+        run = self.server.store.get(run_id)
+        try:
+            cursor = int(self.headers.get("Last-Event-ID", "-1"))
+        except ValueError:
+            cursor = -1
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        deadline = time.monotonic() + 25
+        while time.monotonic() < deadline and not self.server.stream_stop.is_set():
+            version = run.get("version", 0)
+            if version > cursor:
+                payload = f'id: {version}\ndata: {json.dumps(run)}\n\n'.encode()
+                try:
+                    self.wfile.write(payload)
+                    self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError, TimeoutError):
+                    return
+                cursor = version
+            if run["status"] not in {"queued", "running"} and run.get("ticket_delivery", {}).get("state") not in {"pending", "sending"}:
+                return
+            if self.server.stream_stop.wait(0.25):
+                return
+            run = self.server.store.get(run_id)
 
     def do_POST(self):
         if not self.valid_host():
@@ -86,6 +121,8 @@ class Handler(BaseHTTPRequestHandler):
                 request = {"message": body.get("message"), "account_id": body.get("account_id", "acct_demo"), "mode": body.get("mode", "demo")}
                 run = self.server.jobs.submit(request, body.get("request_id", uuid.uuid4().hex))
                 return self.send(202, run)
+            if path.startswith("/api/runs/") and path.endswith("/cancel"):
+                return self.send(200, self.server.jobs.cancel(path.split("/")[-2]))
             if path.startswith("/api/runs/") and path.endswith("/resume"):
                 run_id = path.split("/")[-2]
                 return self.send(202, self.server.jobs.resume(run_id, body.get("request_id", uuid.uuid4().hex)))
@@ -117,6 +154,8 @@ class Handler(BaseHTTPRequestHandler):
 
 class RelayServer(ThreadingHTTPServer):
     def server_close(self):
+        if getattr(self, "stream_stop", None):
+            self.stream_stop.set()
         if getattr(self, "deliveries", None):
             self.deliveries.close()
         if getattr(self, "jobs", None):
@@ -131,6 +170,7 @@ def create_server(port=8000, store=None, workers=None, capacity=None, start_work
                      capacity if capacity is not None else int(os.environ.get("RELAY_QUEUE_CAPACITY", "100")))
     server = RelayServer(("127.0.0.1", port), Handler)
     server.daemon_threads = True
+    server.stream_stop = threading.Event()
     server.store, server.jobs = store, jobs
     server.deliveries = DeliveryRunner(store, ticket_connector) if ticket_connector else None
     if start_workers:

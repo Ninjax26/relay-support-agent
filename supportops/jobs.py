@@ -2,7 +2,7 @@
 import threading
 import uuid
 from .agent import investigate, validate_request, provider_config, check_resume_configuration
-from .store import LeaseLost
+from .store import LeaseLost, CancelRequested
 
 
 class JobRunner:
@@ -43,6 +43,9 @@ class JobRunner:
             raise
         return self.store.resume_run(run_id, request_key, self.capacity)
 
+    def cancel(self, run_id):
+        return self.store.cancel_run(run_id)
+
     def start(self):
         if self.threads:
             return
@@ -78,7 +81,8 @@ class JobRunner:
                 state = self.store.load_agent_checkpoint(run["id"], owner)
                 result = self.agent(run["message"], run["account_id"], run["mode"], resume_state=state,
                                     on_checkpoint=lambda public, private: self.store.checkpoint(run["id"], owner, public, private_state=private),
-                                    on_step=None if run["mode"] == "live" else lambda public: self.store.checkpoint(run["id"], owner, public))
+                                    on_step=None if run["mode"] == "live" else lambda public: self.store.checkpoint(run["id"], owner, public),
+                                    should_cancel=lambda: self.store.cancellation_requested(run["id"]))
             else:
                 # Legacy injected agents keep their trace-only callback contract.
                 result = self.agent(run["message"], run["account_id"], run["mode"],
@@ -86,6 +90,8 @@ class JobRunner:
             self.store.checkpoint(run["id"], owner, result, terminal=True)
         except LeaseLost:
             pass
+        except CancelRequested:
+            self._cancel(run["id"], owner)
         except (ValueError, RuntimeError) as exc:
             self._fail(run["id"], owner, str(exc))
         except Exception:
@@ -95,9 +101,20 @@ class JobRunner:
                 self.active_owners.discard(owner)
         return True
 
+    def _cancel(self, run_id, owner):
+        try:
+            self.store.finish_cancel(run_id, owner)
+        except LeaseLost:
+            pass
+
     def _fail(self, run_id, owner, error):
+        if self.store.cancellation_requested(run_id):
+            self._cancel(run_id, owner)
+            return
         try:
             self.store.checkpoint(run_id, owner, {"status": "failed", "error": error}, terminal=True)
+        except CancelRequested:
+            self._cancel(run_id, owner)
         except LeaseLost:
             pass
 

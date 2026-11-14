@@ -1,6 +1,6 @@
 # Persistent background investigations
 
-Relay submits work to a SQLite-backed queue and returns HTTP 202 immediately. Configurable workers investigate in the background. Browser progress polling does not keep the submission request open, and the most recently selected run is restored after a page reload.
+Relay submits work to a SQLite-backed queue and returns HTTP 202 immediately. Configurable workers investigate in the background. SSE progress does not keep the submission request open, and the most recently selected run is restored after a page reload.
 
 ## Run locally
 
@@ -39,7 +39,7 @@ Use the same `request_id` when retrying the same HTTP submission. The server ret
 
 ### Observe
 
-`GET /api/runs/{id}` returns the current snapshot. Check `status` and `version`; the answer is null until completion. The UI polls every 1.5 seconds, or 5 seconds in a hidden tab. This is polling, not SSE streaming.
+`GET /api/runs/{id}` returns the current snapshot. Check `status` and `version`; the answer is null until completion. The UI uses SSE to receive saved public snapshots, with polling every 1.5 seconds (5 seconds in a hidden tab) if the stream fails.
 
 ### History
 
@@ -68,3 +68,7 @@ The application uses a loopback HTTP server and local SQLite storage. Internet d
 ### Resume a live conversation
 
 `POST /api/runs/{id}/resume` with a stable `request_id` requeues compatible failed/interrupted live work on its existing ID. Original tool/model-request/time budgets apply, and every worker claim has a distinct lease owner. Private conversation state and public progress commit atomically; only public progress is returned by the API. See [recovery](RECOVERY.md) for compatibility, privacy and ambiguous in-flight behavior.
+
+### Streaming and cancellation
+
+`GET /api/runs/{id}/events` streams versioned public snapshots with SSE event IDs. The server checks the stored run state and closes idle connections after 25 seconds; browsers reconnect or use the polling fallback. `POST /api/runs/{id}/cancel` immediately cancels queued or interrupted work. For a running job it durably records `cancel_requested`, fences later checkpoints, and the worker marks the run cancelled at the next boundary. A provider request already in flight is allowed to return or hit its transport timeout before cancellation completes. Cancelled runs cannot be approved or resumed. This is cooperative cancellation, not a hard provider abort.

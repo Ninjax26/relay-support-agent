@@ -209,7 +209,7 @@ def check_resume_configuration(message, account_id, state):
         raise ValueError("The saved investigation exhausted its budget. Start a new investigation.")
 
 
-def investigate(message, account_id, mode="demo", planner=None, on_step=None, resume_state=None, on_checkpoint=None):
+def investigate(message, account_id, mode="demo", planner=None, on_step=None, resume_state=None, on_checkpoint=None, should_cancel=None):
     tools = validate_request(message, account_id, mode)
     if resume_state is not None and mode != "live":
         raise ValueError("Only live model conversations can be resumed")
@@ -255,6 +255,8 @@ def investigate(message, account_id, mode="demo", planner=None, on_step=None, re
         save(notify_step=False)
     demo = demo_calls(message, tools) if mode == "demo" else None
     for step in range(len(trace), MAX_STEPS):
+        if should_cancel and should_cancel():
+            raise RuntimeError("Investigation cancelled")
         if snapshot()["duration_ms"] >= 180000:
             raise RuntimeError("Investigation time budget exceeded; no action was executed.")
         if mode == "demo":
@@ -286,6 +288,8 @@ def investigate(message, account_id, mode="demo", planner=None, on_step=None, re
                 inflight_started_at = None
                 save(notify_step=False)
                 raise
+            if should_cancel and should_cancel():
+                raise RuntimeError("Investigation cancelled")
             history.extend(outputs)
             try:
                 args = json.loads(call["arguments"])

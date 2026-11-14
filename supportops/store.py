@@ -21,6 +21,10 @@ class LeaseLost(RuntimeError):
     pass
 
 
+class CancelRequested(RuntimeError):
+    pass
+
+
 class Store:
     def __init__(self, path=DEFAULT_DB):
         self.path = str(path)
@@ -133,8 +137,11 @@ class Store:
             expired = db.execute("SELECT run_id FROM jobs WHERE state='running' AND lease_until<?", (time.time(),)).fetchall()
             for (run_id,) in expired:
                 run = json.loads(db.execute("SELECT payload FROM runs WHERE id=?", (run_id,)).fetchone()[0])
-                self._update(db, run, {"status": "interrupted", "error": "Worker stopped before completion. Resume a compatible saved live conversation, or retry as a new investigation."})
-                db.execute("UPDATE jobs SET state='interrupted',owner=NULL WHERE run_id=?", (run_id,))
+                cancelled = bool(run.get("cancel_requested"))
+                self._update(db, run, {"status": "cancelled" if cancelled else "interrupted", "error": None if cancelled else "Worker stopped before completion. Resume a compatible saved live conversation, or retry as a new investigation.", "resume_available": False if cancelled else run.get("resume_available")})
+                db.execute("UPDATE jobs SET state=?,owner=NULL,lease_until=NULL WHERE run_id=?", ("cancelled" if cancelled else "interrupted", run_id))
+                if cancelled:
+                    db.execute("DELETE FROM agent_checkpoints WHERE run_id=?", (run_id,))
             row = db.execute("""SELECT jobs.run_id,runs.payload FROM jobs JOIN runs ON runs.id=jobs.run_id
             WHERE jobs.state='queued' AND (?='any' OR json_extract(runs.payload,'$.mode')='demo'
             OR (json_extract(runs.payload,'$.mode')='live' AND json_extract(runs.payload,'$.provider')=?))
@@ -156,19 +163,53 @@ class Store:
             if not job or job[0] != "running" or job[1] != owner or job[2] < time.time():
                 raise LeaseLost("Worker no longer owns this investigation")
             run = json.loads(db.execute("SELECT payload FROM runs WHERE id=?", (run_id,)).fetchone()[0])
+            if run.get("cancel_requested") and changes.get("status") != "cancelled":
+                raise CancelRequested("Cancellation requested")
             self._update(db, run, changes)
             if private_state is not None:
                 validate_state(private_state)
                 encoded = json.dumps(private_state, allow_nan=False)
                 db.execute("INSERT INTO agent_checkpoints VALUES (?,1,?,?) ON CONFLICT(run_id) DO UPDATE SET revision=revision+1,checksum=excluded.checksum,state=excluded.state",
                            (run_id, digest(private_state), encoded))
-            if terminal and run["status"] == "awaiting_approval":
+            if terminal and run["status"] in {"awaiting_approval", "cancelled"}:
                 db.execute("DELETE FROM agent_checkpoints WHERE run_id=?", (run_id,))
             if terminal:
                 db.execute("UPDATE jobs SET state=?,owner=NULL,lease_until=NULL WHERE run_id=?", (run["status"], run_id))
             else:
                 db.execute("UPDATE jobs SET lease_until=? WHERE run_id=?", (time.time() + 90, run_id))
         return run
+
+    def cancel_run(self, run_id):
+        """Queue cancellation is immediate; active work is fenced at its next boundary."""
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT r.payload,j.state FROM runs r JOIN jobs j ON j.run_id=r.id WHERE r.id=?", (run_id,)).fetchone()
+            if not row:
+                raise KeyError("Run not found")
+            run = json.loads(row[0])
+            if run["status"] == "cancelled":
+                return run
+            if row[1] not in {"queued", "running", "interrupted"}:
+                raise ValueError("Only queued, running or interrupted investigations can be cancelled")
+            if row[1] == "running":
+                if not run.get("cancel_requested"):
+                    self._update(db, run, {"cancel_requested": True})
+            else:
+                self._update(db, run, {"status": "cancelled", "cancel_requested": True, "resume_available": False, "error": None})
+                db.execute("UPDATE jobs SET state='cancelled',owner=NULL,lease_until=NULL WHERE run_id=?", (run_id,))
+                db.execute("DELETE FROM agent_checkpoints WHERE run_id=?", (run_id,))
+        return self.get(run_id)
+
+    def cancellation_requested(self, run_id):
+        with self.connect() as db:
+            row = db.execute("SELECT payload FROM runs WHERE id=?", (run_id,)).fetchone()
+        if not row:
+            raise KeyError("Run not found")
+        return bool(json.loads(row[0]).get("cancel_requested"))
+
+    def finish_cancel(self, run_id, owner):
+        return self.checkpoint(run_id, owner, {"status": "cancelled", "cancel_requested": True,
+                    "resume_available": False, "error": None}, terminal=True)
 
     def metrics(self):
         with self.connect() as db:

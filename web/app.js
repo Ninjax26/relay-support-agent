@@ -5,6 +5,7 @@ let nextCursor = null;
 let pendingSubmission = null;
 let retrySubmission = null;
 let resumeSubmission = null;
+let activeStream = null;
 const active = run => ["queued", "running"].includes(run.status);
 const delivering = run => ["pending", "sending"].includes(run.ticket_delivery?.state);
 const scenarios = {
@@ -35,7 +36,7 @@ async function history(append=false) {
   nextCursor=page.next_cursor;
   $('more-history').hidden=!nextCursor;
 }
-async function watch(id) {
+async function pollWatch(id) {
   const generation=++watchGeneration;
   let version=null;
   let failures=0;
@@ -47,7 +48,7 @@ async function watch(id) {
       failures=0;
       if(version!==run.version || version===null) { render(run); version=run.version; }
       if(!active(run) && !delivering(run)) {
-        feedback(run.error || (run.ticket_delivery?.state==='failed'?'Ticket delivery failed. Approval is saved; retry delivery below.':['approved','rejected'].includes(run.status)?'Review decision saved.':'Investigation saved. Review the evidence before approving.'),!!run.error || run.ticket_delivery?.state==='failed');
+        feedback(run.status==='cancelled'?'Investigation cancelled. No review ticket was created.':run.error || (run.ticket_delivery?.state==='failed'?'Ticket delivery failed. Approval is saved; retry delivery below.':['approved','rejected'].includes(run.status)?'Review decision saved.':'Investigation saved. Review the evidence before approving.'),!!run.error || run.ticket_delivery?.state==='failed');
         await history();
         return;
       }
@@ -58,6 +59,31 @@ async function watch(id) {
     }
     await new Promise(resolve=>setTimeout(resolve,document.hidden?5000:1500));
   }
+}
+function watch(id) {
+  if (activeStream) { activeStream.close(); activeStream=null; }
+  if (!window.EventSource) return pollWatch(id);
+  const generation=++watchGeneration;
+  localStorage.setItem('relay-last-run',id);
+  const source=new EventSource('/api/runs/'+encodeURIComponent(id)+'/events');
+  activeStream=source;
+  source.onmessage=event=>{
+    if (generation!==watchGeneration) { source.close(); return; }
+    const run=JSON.parse(event.data);
+    render(run);
+    if (run.cancel_requested && run.status==='running') feedback('Cancellation requested. Relay will stop after the current model request finishes.');
+    else if (active(run)) feedback(run.status==='queued'?'Investigation queued.':'Investigation running · '+run.trace.length+' saved steps.');
+    else if (delivering(run)) feedback('Approval saved. Delivering the ticket to the local test service…');
+    else {
+      source.close(); activeStream=null;
+      feedback(run.status==='cancelled'?'Investigation cancelled. No review ticket was created.':run.error || (run.ticket_delivery?.state==='failed'?'Ticket delivery failed. Approval is saved.':'Investigation saved. Review the evidence before approving.'),!!run.error || run.ticket_delivery?.state==='failed');
+      history().catch(error=>feedback(error.message,true));
+    }
+  };
+  source.onerror=()=>{
+    source.close(); activeStream=null;
+    if(generation===watchGeneration) pollWatch(id).catch(error=>feedback(error.message,true));
+  };
 }
 function render(run) {
   current=run;
@@ -72,6 +98,7 @@ function render(run) {
   $('approve').closest('.approval').hidden=!run.answer;
   $('approve').closest('.approval').querySelector('.eyebrow').textContent=run.status==='awaiting_approval'?'HUMAN DECISION REQUIRED':'REVIEW DECISION RECORDED';
   $('retry-run').hidden=!['failed','interrupted'].includes(run.status);
+  $('cancel-run').hidden=!['queued','running','interrupted'].includes(run.status) || !!run.cancel_requested;
   $('resume-run').hidden=!(['failed','interrupted'].includes(run.status) && run.resume_available);
   const state=$('agent-state');
   state.replaceChildren();
@@ -132,6 +159,13 @@ $('investigate-form').onsubmit=async event=>{
     watch(run.id).catch(error=>feedback(error.message,true));
   } catch(error) { feedback(error.message,true); }
   finally { $('run').disabled=false; $('run').replaceChildren(document.createTextNode('Investigate issue'),element('span','↗')); }
+};
+$('cancel-run').onclick=async()=>{
+  if(!current) return;
+  $('cancel-run').disabled=true;
+  try { const run=await api(`/api/runs/${current.id}/cancel`,{});render(run);watch(run.id); }
+  catch(error) { feedback(error.message,true); }
+  finally { $('cancel-run').disabled=false; }
 };
 $('resume-run').onclick=async()=>{
   if(!current) return;
