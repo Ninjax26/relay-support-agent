@@ -1,4 +1,5 @@
 """Bounded background workers over the persistent SQLite queue."""
+import hashlib
 import threading
 import uuid
 from .agent import investigate, validate_request, provider_config, check_resume_configuration
@@ -16,16 +17,21 @@ class JobRunner:
         self.active_owners = set()
         self.owners_lock = threading.Lock()
 
-    def submit(self, request, request_key, retry_of=None):
+    def submit(self, request, request_key, retry_of=None, user_id=None):
         validate_request(request.get("message"), request.get("account_id"), request.get("mode"))
         if request["mode"] == "live":
             config = provider_config()
             if not config["live_available"]:
-                raise ValueError("Live mode requires a configured provider key. Run python3 run_live.py locally.")
+                raise ValueError("Live mode requires a configured provider key. Check the Relay deployment settings.")
             request = {**request, "provider": config["provider"]}
-        return self.store.enqueue(request, request_key, self.capacity, retry_of)
+        return self.store.enqueue(request, request_key, self.capacity, retry_of, user_id)
 
-    def resume(self, run_id, request_key):
+    def resume(self, run_id, request_key, user_id=None):
+        if user_id is not None:
+            if not isinstance(request_key, str) or not 1 <= len(request_key) <= 128:
+                raise ValueError("Provide a request_id of 1–128 characters")
+            self.store.require_owner(run_id, user_id)
+            request_key = hashlib.sha256((user_id + ":" + request_key).encode()).hexdigest()
         receipt = self.store.resume_receipt(run_id, request_key)
         if receipt:
             return receipt
@@ -34,14 +40,14 @@ class JobRunner:
             state = self.store.load_agent_checkpoint(run_id)
             if state is None or self.agent is not investigate:
                 raise ValueError("No compatible saved live conversation exists. Start a new investigation.")
-            check_resume_configuration(run["message"], run["account_id"], state)
+            check_resume_configuration(run["message"], run["account_id"], state, self.store.run_policies(run_id))
         except (ValueError, KeyError):
             # A duplicate may have committed after our initial receipt read.
             receipt = self.store.resume_receipt(run_id, request_key)
             if receipt:
                 return receipt
             raise
-        return self.store.resume_run(run_id, request_key, self.capacity)
+        return self.store.resume_run(run_id, request_key, self.capacity, user_id)
 
     def cancel(self, run_id):
         return self.store.cancel_run(run_id)
@@ -68,21 +74,29 @@ class JobRunner:
                 # A prolonged failure expires the lease and fences the worker.
                 continue
 
-    def run_one(self):
+    def run_one(self, only_run=None, lease_seconds=90, concurrency_limit=None):
         config = provider_config()
         owner = self.owner + "-" + uuid.uuid4().hex
-        run = self.store.claim(owner, provider=config["provider"] if config["live_available"] else None)
+        run = self.store.claim(owner, lease_seconds=lease_seconds,
+                               provider=config["provider"] if config["live_available"] else None,
+                               only_run=only_run, concurrency_limit=concurrency_limit)
         if not run:
             return False
         with self.owners_lock:
             self.active_owners.add(owner)
+        attempt_stop = threading.Event()
+        heartbeat = None
+        if only_run:
+            heartbeat = threading.Thread(target=self.heartbeat_attempt, args=(owner, attempt_stop), daemon=True)
+            heartbeat.start()
         try:
             if self.agent is investigate:
                 state = self.store.load_agent_checkpoint(run["id"], owner)
                 result = self.agent(run["message"], run["account_id"], run["mode"], resume_state=state,
                                     on_checkpoint=lambda public, private: self.store.checkpoint(run["id"], owner, public, private_state=private),
                                     on_step=None if run["mode"] == "live" else lambda public: self.store.checkpoint(run["id"], owner, public),
-                                    should_cancel=lambda: self.store.cancellation_requested(run["id"]))
+                                    should_cancel=lambda: self.store.cancellation_requested(run["id"]),
+                                    workspace_policies=self.store.run_policies(run["id"]) if run.get("policy_count") else None)
             else:
                 # Legacy injected agents keep their trace-only callback contract.
                 result = self.agent(run["message"], run["account_id"], run["mode"],
@@ -97,9 +111,19 @@ class JobRunner:
         except Exception:
             self._fail(run["id"], owner, "Investigation failed unexpectedly. Saved steps remain available; no review ticket was created.")
         finally:
+            attempt_stop.set()
+            if heartbeat:
+                heartbeat.join(timeout=1)
             with self.owners_lock:
                 self.active_owners.discard(owner)
         return True
+
+    def heartbeat_attempt(self, owner, stop):
+        while not stop.wait(10):
+            try:
+                self.store.heartbeat(owner)
+            except Exception:
+                continue
 
     def _cancel(self, run_id, owner):
         try:

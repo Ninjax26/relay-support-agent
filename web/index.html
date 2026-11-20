@@ -1,7 +1,32 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Relay — Support Operations Agent</title><link rel="stylesheet" href="/styles.css"><script src="/app.js" defer></script></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Relay — Support Operations Agent</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/styles.css"><script src="/app.js" defer></script></head>
 <body>
+<section id="auth" class="auth-screen" hidden aria-labelledby="auth-title">
+  <div class="auth-panel">
+    <a class="brand" href="/" aria-label="Relay home"><span class="brand-mark">↗</span> relay<span class="brand-dot">.</span></a>
+    <h1 id="auth-title">Sign in to Relay</h1>
+    <p class="muted">Investigate support cases and save your work in a private workspace.</p>
+    <div id="google-auth" hidden>
+      <button id="google-login" class="google-login" type="button" aria-label="Sign in with Google">
+        <img src="/google-sign-in.png" width="180" height="40" alt="">
+      </button>
+      <p class="auth-divider">or use a Relay account</p>
+    </div>
+    <form id="auth-form">
+      <label for="username">Username</label>
+      <input id="username" name="username" autocomplete="username" required pattern="[A-Za-z0-9_\-]{3,32}" maxlength="32" autocapitalize="off" spellcheck="false" aria-describedby="username-hint">
+      <p id="username-hint" class="field-hint" hidden>Use 3–32 letters, numbers, underscores, or hyphens.</p>
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" minlength="12" maxlength="128" required>
+      <p id="auth-hint" class="field-hint" hidden>Use at least 12 characters.</p>
+      <button class="primary" id="auth-submit" type="submit">Sign in</button>
+    </form>
+    <button id="auth-toggle" class="secondary" type="button">Create an account</button>
+    <p id="auth-status" class="feedback" role="status"></p>
+  </div>
+</section>
+<div id="app" hidden>
 <a class="skip" href="#workspace">Skip to workspace</a>
 <aside class="sidebar">
   <a class="brand" href="/" aria-label="Relay home"><span class="brand-mark">↗</span> relay<span class="brand-dot">.</span></a>
@@ -9,10 +34,10 @@
   <nav aria-label="Workspace"><button class="nav selected" id="workspace-nav" aria-current="page">01 <span>Investigation desk</span><span>↗</span></button><button class="nav" id="workflow-nav">02 <span>How it works</span><span>↗</span></button></nav>
   <div class="history-heading"><h2>Recent investigations</h2><button id="refresh" aria-label="Refresh investigation history">↻</button></div>
   <div id="history" class="history"><p class="muted">No investigations yet.</p></div><button id="more-history" class="secondary" hidden>Load older investigations</button>
-  <div class="sidebar-foot"><span class="status-dot"></span> LOCAL WORKSPACE<p>Fixture data · human-approved actions</p></div>
+  <div class="sidebar-foot"><span class="status-dot"></span> <span id="workspace-label">LOCAL WORKSPACE</span><p>Fixture data · human-approved actions</p></div>
 </aside>
 <main id="workspace">
-  <header class="topbar"><span>WORKSPACE / INVESTIGATIONS</span><span class="mode-tag" id="mode-tag">DETERMINISTIC DEMO</span></header>
+  <header class="topbar"><span>WORKSPACE / INVESTIGATIONS</span><div class="workspace-actions"><span class="mode-tag" id="mode-tag">DETERMINISTIC DEMO</span><button id="sign-out" class="secondary" hidden>Sign out</button></div></header>
   <section class="intro"><div><p class="eyebrow orange">FROM CUSTOMER ISSUE TO CLEAR NEXT STEP</p><h1>Evidence first.<br>Action with approval.</h1><p class="intro-copy">A support agent that investigates, cites its sources,<br class="desktop"> and knows when to hand the decision to you.</p></div><div class="intro-side"><span class="big-number">01—04</span><p>RETRIEVE / INVESTIGATE<br>PROPOSE / REVIEW</p></div></section>
   <section id="workflow" class="workflow" hidden aria-labelledby="workflow-title"><h2 id="workflow-title">Inside an investigation</h2><ol><li><strong>Retrieve</strong><p>Find relevant playbooks and attach them as evidence. Live search can combine keyword matches with meaning-based matches.</p></li><li><strong>Investigate</strong><p>The live model records a checklist, chooses scoped read tools, and revises its plan after observations.</p></li><li><strong>Propose</strong><p>Check the draft against evidence requirements. Fix failed checks before saving the reply and proposal.</p></li><li><strong>Review</strong><p>You approve or reject. Approval creates one local review ticket; it does not issue a refund or change an account.</p></li></ol><p class="muted">Demo mode uses a deterministic planner. Live mode uses an LLM. Both share the same tools and approval boundary.</p></section>
   <div class="desk">
@@ -20,7 +45,26 @@
       <form id="investigate-form"><div class="field-row"><div><label for="account">Customer account</label><select id="account"><option value="acct_demo">Northstar Labs · Pro</option><option value="acct_basic">Cedar Studio · Basic</option><option value="acct_locked">Orbit Works · Business</option></select></div><div><label for="mode">Agent mode</label><select id="mode"><option value="demo">Demo · no API key</option><option value="live">Live LLM · API key required</option></select></div></div>
       <label for="message">Customer issue</label><textarea id="message" rows="6" maxlength="4000" required placeholder="Describe the issue, symptoms, and what the customer needs…">I was charged twice for the same invoice. Can you investigate and arrange a refund?</textarea>
       <p class="field-hint">Use demo accounts only. Don’t include passwords or personal data.</p>
+      <label class="policy-choice" id="policy-choice" hidden>
+        <input type="checkbox" id="use-policies" checked> Use my workspace policies
+      </label>
       <button class="primary" id="run" type="submit">Investigate issue <span>↗</span></button></form>
+      <details id="policy-library" class="policy-library" hidden>
+        <summary>Workspace policies <span id="policy-count"></span></summary>
+        <p class="muted">Upload a text or Markdown file, or paste a policy below. Live AI sends matching policy text to Gemini. Demo mode shows the matching citation with its scripted reply.</p>
+        <form id="policy-form">
+          <label for="policy-file">Policy file (.txt or .md)</label>
+          <input id="policy-file" type="file" accept=".txt,.md,.markdown,text/plain,text/markdown">
+          <label for="policy-title">Policy title</label>
+          <input id="policy-title" type="text" maxlength="120" required>
+          <label for="policy-text">Policy text</label>
+          <textarea id="policy-text" rows="4" maxlength="3000" aria-describedby="policy-limit" required></textarea>
+          <p id="policy-limit" class="field-hint">Up to 3,000 characters per policy. Use sample content and omit secrets or customer data.</p>
+          <button id="save-policy" class="secondary" type="submit">Save policy</button>
+        </form>
+        <p id="policy-status" class="feedback" role="status"></p>
+        <div id="policies"></div>
+      </details>
       <p class="eyebrow scenario-title">TRY A SCENARIO</p><div class="scenarios"><button data-scenario="billing">Duplicate charge <span>↗</span></button><button data-scenario="outage">API timeouts <span>↗</span></button><button data-scenario="login">Locked account <span>↗</span></button><button data-scenario="export">Failed export <span>↗</span></button></div>
       <p id="feedback" role="status" aria-live="polite" class="feedback"></p>
     </section>
@@ -31,4 +75,5 @@
   <section id="trace-section" class="trace-section" hidden><div class="trace-header"><div><p class="eyebrow">03 / EXECUTION TRACE</p><h2>The work behind the answer.</h2></div><span id="trace-count" class="small-label"></span></div><div id="trace"></div></section>
   <footer><span>RELAY / SUPPORT OPERATIONS</span><span>Bounded tool loop. Visible evidence. Human control.</span></footer>
 </main>
+</div>
 </body></html>

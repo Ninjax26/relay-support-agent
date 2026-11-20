@@ -17,6 +17,14 @@ class PublicationTests(unittest.TestCase):
         self.assertIn("nonempty credential assignment", inspect("server.py", b"RELAY_TICKET_TOKEN=local-test-value\n"))
         self.assertEqual(inspect(".env.example", b"RELAY_TICKET_TOKEN=\nRELAY_TICKET_URL=\n"), [])
 
+    def test_hosted_credentials_are_blocked(self):
+        oauth_secret = "GOCSPX-" + "a" * 22
+        database_dsn = "postgresql://" + "sample:sample-password" + "@localhost/relay"
+        self.assertIn("Google OAuth secret", inspect("server.py", oauth_secret.encode()))
+        self.assertIn("PostgreSQL connection credentials", inspect("app.py", database_dsn.encode()))
+        self.assertIn("nonempty credential assignment", inspect(".env.example", b"GOOGLE_CLIENT_SECRET=fake-value"))
+        self.assertEqual(inspect(".env.example", b"GOOGLE_CLIENT_SECRET=\nDATABASE_URL=\n"), [])
+
     def test_empty_environment_template_is_allowed(self):
         self.assertEqual(inspect(".env.example", b"GEMINI_API_KEY=\nOPENAI_API_KEY=\nPORT=8000\n"), [])
 

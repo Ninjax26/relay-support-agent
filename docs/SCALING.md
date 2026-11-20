@@ -1,6 +1,6 @@
 # Persistent background investigations
 
-Relay submits work to a SQLite-backed queue and returns HTTP 202 immediately. Configurable workers investigate in the background. SSE progress does not keep the submission request open, and the most recently selected run is restored after a page reload.
+Relay returns HTTP 202 when it queues an investigation. The local server stores runs in SQLite and streams saved progress with server-sent events. The hosted app stores runs in PostgreSQL and polls for progress.
 
 ## Run locally
 
@@ -39,7 +39,7 @@ Use the same `request_id` when retrying the same HTTP submission. The server ret
 
 ### Observe
 
-`GET /api/runs/{id}` returns the current snapshot. Check `status` and `version`; the answer is null until completion. The UI uses SSE to receive saved public snapshots, with polling every 1.5 seconds (5 seconds in a hidden tab) if the stream fails.
+`GET /api/runs/{id}` returns the current snapshot. Check `status` and `version`; the answer is null until completion. The local UI uses server-sent events with a polling fallback. The hosted UI polls every 1.5 seconds, slowing to five seconds in a hidden tab.
 
 ### History
 
@@ -51,7 +51,7 @@ Use the same `request_id` when retrying the same HTTP submission. The server ret
 
 ### Health
 
-`GET /api/health` provides queue-state counts, configured worker count/capacity, and ticket count without customer messages or credentials. It is a local diagnostics endpoint, not an authenticated production monitoring service.
+`GET /api/health` reports database readiness on the hosted app. The local server reports worker, queue, and ticket counts.
 
 ## Load check
 
@@ -61,9 +61,11 @@ python3 scripts/benchmark_jobs.py --jobs 50 --workers 4
 
 The command runs deterministic investigations against a temporary database and reports completion count, enqueue latency, elapsed time, and checkpoint coverage. It does not call model providers or include HTTP latency.
 
-## Deployment constraints
+## Hosted execution
 
-The application uses a loopback HTTP server and local SQLite storage. Internet deployment requires a production server, authentication and tenant authorization, provider-aware rate limits, hard request deadlines, log/trace retention, and a managed database/queue. Do not share SQLite over network filesystems. Different server processes sharing a database share queued work. Live jobs record their selected provider and are claimed only by workers with credentials configured for that provider; demo-only workers leave live work queued. Independent workspaces should still use separate databases.
+On Vercel, the Python function uses PostgreSQL for sessions, workspace policies, jobs, and checkpoints. The signed-in browser starts processing a queued run and polls for progress. Opening a queued case can start processing if the previous browser request ended before a worker claimed it. Worker leases fence stale writers across function instances.
+
+The local server uses a loopback listener and SQLite by default. Keep SQLite on local storage. Live jobs record their selected provider and only compatible workers claim them.
 
 ### Resume a live conversation
 
@@ -71,4 +73,4 @@ The application uses a loopback HTTP server and local SQLite storage. Internet d
 
 ### Streaming and cancellation
 
-`GET /api/runs/{id}/events` streams versioned public snapshots with SSE event IDs. The server checks the stored run state and closes idle connections after 25 seconds; browsers reconnect or use the polling fallback. `POST /api/runs/{id}/cancel` immediately cancels queued or interrupted work. For a running job it durably records `cancel_requested`, fences later checkpoints, and the worker marks the run cancelled at the next boundary. A provider request already in flight is allowed to return or hit its transport timeout before cancellation completes. Cancelled runs cannot be approved or resumed. This is cooperative cancellation, not a hard provider abort.
+The local `GET /api/runs/{id}/events` route streams versioned progress snapshots with SSE event IDs. The server checks the stored run state and closes idle connections after 25 seconds; browsers reconnect or use the polling fallback. `POST /api/runs/{id}/cancel` immediately cancels queued or interrupted work. For a running job it durably records `cancel_requested`, fences later checkpoints, and the worker marks the run cancelled at the next boundary. A provider request already in flight is allowed to return or hit its transport timeout before cancellation completes. Cancelled runs cannot be approved or resumed. This is cooperative cancellation, not a hard provider abort.

@@ -50,13 +50,16 @@ def check_proposal(proposal, evidence):
                 r"\b(?:your |the )?(?:account|subscription|(?:export )?job) (?:has been |was |is (?:now )?)(?:unlocked|cancelled|canceled|rerun|restarted)\b",
                 r"\b(?:you (?:will|shall) (?:receive|get)|(?:a |your |the )?refund (?:is |has been )?(?:guaranteed|approved)|we (?:will|shall) (?:issue|process)) (?:a |the |your )?refund\b",
                 r"\b(?:a |your |the )?refund (?:is |has been )?(?:guaranteed|approved)\b",
+                r"\b(?:i|we) (?:have |already )?(?:initiated|started|opened|created|submitted) (?:a |an |the )?(?:(?:billing|support|identity|engineering|manual) )?(?:review|ticket|escalation)\b",
+                r"\b(?:(?:a|the) )?(?:(?:billing|support|identity|engineering|manual) )?(?:review|ticket|escalation) (?:has been|was|is now) (?:initiated|started|opened|created|submitted)\b",
+                r"\b(?:will|shall) (?:review (?:the|this|your) [^.!?]{1,60} and )?(?:contact you|reach out to you|follow up with you)\b",
             ]
             for pattern in completed:
                 for match in re.finditer(pattern, clause, re.I):
                     prefix = clause[max(0, match.start() - 12):match.start()]
                     if re.search(r"\b(?:no|not|never)\s+$", prefix, re.I):
                         continue
-                    fail("action_policy", field, match[0], [], "Do not claim customer-impacting actions were executed or promise refunds. Propose human review instead.")
+                    fail("action_policy", field, match[0], [], "Describe review as a proposal. Remove claims that actions were executed or that refunds or customer follow-up are guaranteed.")
                     break
                 else:
                     continue

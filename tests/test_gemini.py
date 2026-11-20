@@ -32,6 +32,27 @@ class GeminiTests(unittest.TestCase):
         self.assertNotIn("test-only-key", json.dumps(requests))
         self.assertEqual(requests[0]["tools"][0]["function"]["name"], "update_plan")
 
+    def test_parallel_calls_are_deferred_with_complete_provider_history(self):
+        tool_calls = [
+            {"id": "first", "function": {"name": "lookup_account", "arguments": "{}"}},
+            {"id": "later", "function": {"name": "complete_case", "arguments": "{}"}},
+        ]
+        message = {"role": "assistant", "tool_calls": tool_calls}
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "test-only-key"}, clear=True):
+            planner = GeminiPlanner()
+            with patch.object(planner, "request_json", return_value={"choices": [{"message": message}]}) as send:
+                history = [{"role": "user", "content": "Check my invoice"}]
+                result = planner.respond(history)
+                self.assertEqual([call["name"] for call in result["output"]], ["lookup_account"])
+                history.extend(result["output"])
+                history.append({"type": "function_call_output", "call_id": "first", "output": '{"expected":true}'})
+                planner.respond(history)
+                messages = json.loads(send.call_args.args[0].data)["messages"]
+        self.assertEqual(messages[2], message)
+        self.assertEqual(json.loads(messages[3]["content"]), {"expected": True})
+        self.assertEqual(messages[4]["tool_call_id"], "later")
+        self.assertTrue(json.loads(messages[4]["content"])["deferred"])
+
     def test_quota_error_is_actionable_without_provider_payload(self):
         error = urllib.error.HTTPError("https://example.invalid", 429, "quota", {}, io.BytesIO(b"private provider details"))
         with patch.dict(os.environ, {"GEMINI_API_KEY": "test-only-key"}, clear=True), patch("urllib.request.urlopen", side_effect=error):

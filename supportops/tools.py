@@ -1,10 +1,14 @@
 """Read-only fixtures, lexical retrieval, and strict tool argument validation."""
 import json
 from pathlib import Path
-from .retrieval import Retriever, configured_mode
+from .retrieval import Retriever, configured_mode, tokens
 from .verification import check_proposal, CHECKS, LIMITATION
 
 ROOT = Path(__file__).resolve().parent.parent
+POLICY_QUERY_STOP_WORDS = set(
+    "a am an and are as at be but by can could do for from had has have how i if in is it me my of on or our "
+    "please so that the their they this to us was we were what when where which who will with would you your".split()
+)
 
 
 class ToolError(ValueError):
@@ -12,12 +16,16 @@ class ToolError(ValueError):
 
 
 class Tools:
-    def __init__(self, account_id, retrieval_mode=None):
+    def __init__(self, account_id, retrieval_mode=None, workspace_policies=None, issue=None):
         self.account_id = account_id
         self.docs = json.loads((ROOT / "data/knowledge.json").read_text())
         self.accounts = json.loads((ROOT / "data/accounts.json").read_text())
         self.services = json.loads((ROOT / "data/services.json").read_text())
         self.retriever = Retriever(self.docs, configured_mode() if retrieval_mode is None else retrieval_mode)
+        self.workspace_retriever = Retriever(workspace_policies) if workspace_policies else None
+        if workspace_policies:
+            self.docs.extend(workspace_policies)
+        self.issue_policy, self.issue_policy_metadata = self.match_workspace_policy(issue)
         self.retrieval_events = []
         self.evidence = {}
         self.plan = None
@@ -50,6 +58,10 @@ class Tools:
                 issues.append(f"Retrieve and cite {ref} before proposing {action}.")
         if not any(ref.startswith("KB-") for ref in refs):
             issues.append("Retrieve and cite a knowledge playbook.")
+        if self.issue_policy:
+            identifier = self.issue_policy[0]["id"]
+            if identifier not in refs:
+                issues.append(f"Retrieve and cite workspace policy {identifier}. Search using the original customer issue, then explain the policy's applicable guidance or any conflict.")
         findings = check_proposal(proposal, {ref: self.evidence[ref] for ref in refs if ref in self.evidence})
         issues.extend(finding["message"] for finding in findings)
         summary = proposal["summary"]
@@ -61,10 +73,24 @@ class Tools:
         self.verified_proposal = json.dumps(proposal, sort_keys=True) if not issues else None
         return self.verification
 
+    def match_workspace_policy(self, query):
+        if self.workspace_retriever and isinstance(query, str):
+            terms = " ".join(term for term in tokens(query) if term not in POLICY_QUERY_STOP_WORDS)
+            if terms:
+                return self.workspace_retriever.search(terms, k=1)
+        return [], None
+
     def search(self, query):
         """Retrieve cited playbooks and preserve the actual retrieval strategy."""
         selected, metadata = self.retriever.search(query)
         self.retrieval_events.append(metadata)
+        if self.issue_policy and self.issue_policy[0]["id"] not in self.evidence:
+            matches, workspace_metadata = self.issue_policy, self.issue_policy_metadata
+        else:
+            matches, workspace_metadata = self.match_workspace_policy(query)
+        if workspace_metadata:
+            self.retrieval_events.append({**workspace_metadata, "source": "workspace"})
+        selected = matches + selected
         for doc in selected:
             self.evidence[doc["id"]] = doc
         return selected

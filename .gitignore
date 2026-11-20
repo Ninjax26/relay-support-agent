@@ -25,3 +25,5 @@ private/
 docs/relay-preview.png
 docs/relay-agent-preview.png
 .venv/
+
+.vercel/

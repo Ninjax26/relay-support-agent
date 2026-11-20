@@ -1,14 +1,19 @@
 """Conservative publication allowlist and credential scan; never prints matches."""
 import argparse
+import hashlib
 import re
 import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-ROOT_FILES = {"README.md", ".gitignore", ".env.example", "server.py", "run_live.py", "evals.py"}
-DOCS = {"WORKFLOW.md", "EXTERNAL_SETUP.md", "SCALING.md", "EVALUATION.md", "VERIFICATION.md", "RETRIEVAL.md", "TICKETING.md", "RECOVERY.md"}
+GOOGLE_BUTTON = "web/google-sign-in.png"
+GOOGLE_BUTTON_SHA256 = "e0ae40808909fab9092b6ecbe7aa2d8e039ed62308fae7bf512c664c060befa2"
+ROOT_FILES = {"README.md", ".gitignore", ".env.example", "server.py", "run_live.py", "evals.py", "app.py", "requirements.txt", "vercel.json", ".vercelignore"}
+DOCS = {"WORKFLOW.md", "EXTERNAL_SETUP.md", "RESUME.md", "IMPROVEMENTS.md", "VALIDATION.md", "SCALING.md", "EVALUATION.md", "VERIFICATION.md", "RETRIEVAL.md", "TICKETING.md", "RECOVERY.md"}
 PATTERNS = {
     "Google API key": r"AIza[0-9A-Za-z_-]{30,}",
+    "Google OAuth secret": r"\bGOCSPX-[A-Za-z0-9_-]{16,}\b",
+    "PostgreSQL connection credentials": r"postgres(?:ql)?://[^\s/:@]+:[^\s/@]+@",
     "OpenAI key": r"\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}",
     "GitHub token": r"\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})",
     "AWS access key": r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b",
@@ -19,7 +24,7 @@ PATTERNS = {
 
 def allowed(path):
     p = Path(path)
-    if path in ROOT_FILES or path == ".github/workflows/ci.yml":
+    if path in ROOT_FILES or path in {".github/workflows/ci.yml", GOOGLE_BUTTON}:
         return True
     if len(p.parts) != 2:
         return False
@@ -31,6 +36,8 @@ def allowed(path):
 
 
 def inspect(path, content):
+    if path == GOOGLE_BUTTON:
+        return [] if hashlib.sha256(content).hexdigest() == GOOGLE_BUTTON_SHA256 else ["unexpected Google sign-in artwork"]
     problems = []
     if not allowed(path):
         problems.append("not on publication allowlist")
@@ -41,7 +48,7 @@ def inspect(path, content):
     for label, pattern in PATTERNS.items():
         if re.search(pattern, value):
             problems.append(label)
-    for match in re.finditer(r"(?m)^[ \t]*(?:export[ \t]+)?(?:GEMINI_API_KEY|OPENAI_API_KEY|GH_TOKEN|GITHUB_TOKEN|RELAY_TICKET_TOKEN)[ \t]*=[ \t]*([^\r\n]*)$", value):
+    for match in re.finditer(r"(?m)^[ \t]*(?:export[ \t]+)?(?:GEMINI_API_KEY|OPENAI_API_KEY|GH_TOKEN|GITHUB_TOKEN|RELAY_TICKET_TOKEN|GOOGLE_CLIENT_SECRET|DATABASE_URL|POSTGRES_URL)[ \t]*=[ \t]*([^\r\n]*)$", value):
         candidate = match[1].strip().strip("\"'")
         if candidate not in {"", "your-key", "your-api-key"}:
             problems.append("nonempty credential assignment")
@@ -65,7 +72,7 @@ def main():
     for name, reason in failures:
         print(f"BLOCKED {name}: {reason}")
     if not failures:
-        print(f"Publication checks passed for {len(files)} text files; no disallowed files or detected credentials.")
+        print(f"Publication checks passed for {len(files)} files; no disallowed files or detected credentials.")
     return bool(failures)
 
 

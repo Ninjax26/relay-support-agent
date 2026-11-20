@@ -1,198 +1,81 @@
-# Relay — Agentic Support Operations
+# Relay · Agentic support investigations
+
+[Open the live app](https://relay-support-desk-ruby.vercel.app) · [Execution workflow](docs/WORKFLOW.md) · [Evaluation](docs/EVALUATION.md)
 
 [![Agent checks](https://github.com/Ninjax26/relay-support-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/Ninjax26/relay-support-agent/actions/workflows/ci.yml)
 
-An evidence-driven support investigation agent built with **Python, Gemini/OpenAI tool calling, BM25/hybrid retrieval, and SQLite**. Relay plans an investigation, chooses scoped tools, checks its draft against evidence requirements, and proposes a review ticket for human approval. Approved proposals can be delivered to an isolated local test ticket service.
+Relay turns a support complaint into a cited recommendation and a review ticket. A model chooses which tools to call, reads the resulting evidence, and revises the draft when verification fails. A person approves or rejects the proposal. The hosted app runs on Vercel with PostgreSQL, Google sign-in, and separate policy libraries and case histories for each account.
 
-Example: a customer reports a duplicate charge. Relay retrieves the billing policy, inspects the payment ledger, drafts a cited answer, verifies its proposal, and waits for approval. Approval creates one local review ticket; it does not issue a refund.
+## Try a policy-based investigation
 
-## Features
+1. Open the live app and sign in with Google or create a Relay account. Google sign-in and password sign-in each have their own workspace.
+2. Expand **Workspace policies**. Paste the sample below or upload it as a UTF-8 `.txt` or `.md` file. Save it with the title **Duplicate charge playbook**.
+3. Select **Live AI · Gemini** and **Use my workspace policies**. Choose **Northstar Labs** and enter this issue. “Two payments appeared for invoice INV-204. What should I provide for the billing review?”
+4. Open the policy citation and trace. Check the ledger lookup, the policy search and the verification result. Select **Approve review ticket** to save the decision and ticket in your case history.
 
-- Model-selected tools with a **plan → observe → revise → verify → review** loop.
-- Gemini and OpenAI adapters; Gemini is the live launcher's default.
-- Offline BM25 plus optional Gemini semantic/hybrid retrieval with inspectable citations and explicit fallback.
-- Server-scoped account lookup and service-status tools using fictional fixtures.
-- Verification bound to the exact proposal; new evidence or plan changes invalidate it.
-- Transactional, idempotent approval and rejection in SQLite.
-- Charcoal and burnt-orange UI with saved runs, plans, evidence, traces, and JSON export.
-- Persistent background queue, configurable workers, per-step checkpoints, duplicate-submission protection, and explicit retry.
-- Paginated history, SSE progress with polling fallback, cooperative cancellation, reload recovery, and local queue health metrics.
-- Scripted demo mode, provider contract tests, evaluation CLI, and GitHub Actions.
-- Bounded transient-error retries and distinct connection, authentication, and quota errors.
+> For duplicate payments against the same invoice, ask the customer to provide their purchase-order reference for billing review. Keep the decision pending until a reviewer approves the proposal.
 
-## Quick start
+The public workspace uses fictional customer records and shares a bounded allowance for live investigations. **Demo** mode shows the same tools and approval flow with a scripted planner. It attaches a matching policy as evidence. In **Live AI** mode, the model receives retrieved policy text and can use it to adapt the reply.
 
-Requires **Python 3.10+**. Demo mode uses the standard library only: no dependency installation or API key required.
+## Run locally
 
-```sh
+Python 3.12 is used in CI. The local demo works offline with Python’s standard library.
+
+~~~sh
 git clone https://github.com/Ninjax26/relay-support-agent.git
 cd relay-support-agent
 python3 server.py
-```
+~~~
 
-Open **http://127.0.0.1:8000**, pick a scenario, and select **Investigate issue**. Inspect the sources and trace before approving or rejecting.
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000) and run a sample case.
 
-| Scenario | Investigation |
+To try account sign-in and policy uploads locally, start a separate authenticated SQLite workspace:
+
+~~~sh
+RELAY_PUBLIC_ORIGIN=http://127.0.0.1:8000 RELAY_BIND=127.0.0.1 \
+RELAY_DB_PATH=data/workspaces.sqlite3 PORT=8000 python3 server.py
+~~~
+
+Use the `127.0.0.1` address above and create a password account. For local Gemini, run the same command with `python3 run_live.py` and enter the key at the hidden prompt. Set `GEMINI_MODEL` to a tool-calling model available to your project. The launcher also supports `--provider openai` and a one-request `--check`. See [provider configuration](docs/EXTERNAL_SETUP.md).
+
+## How it works
+
+~~~mermaid
+flowchart LR
+    A[Customer issue] --> B[Plan and select tools]
+    B --> C[Read policies and account evidence]
+    C --> D[Verify the cited proposal]
+    D -->|Revise| B
+    D -->|Pass| E[Human review]
+    E -->|Approve| F[Review ticket]
+~~~
+
+- **Retrieval and verification.** BM25 searches the built-in playbooks and the workspace’s selected policy library. The built-in corpus can use optional Gemini embeddings and hybrid ranking. Verification checks required citations and recognized claims, and binds approval to the exact proposal.
+- **Persistent investigations.** A queued run snapshots the selected workspace policies. The worker saves progress and private conversation checkpoints. A compatible failed live run can resume. A new retry uses the original policy snapshot. Local progress uses server-sent events and hosted progress uses polling.
+- **Review and delivery.** Approval is idempotent. The hosted app stores the resulting ticket in Relay. A separate local sandbox can deliver approved proposals to an isolated HTTP ticket service. See [ticket delivery](docs/TICKETING.md).
+
+## Host your own instance
+
+The Vercel entry point is `app.py` and its build configuration is `vercel.json`. Install the hosted dependencies from `requirements.txt` when running that entry point locally.
+
+| Environment variable | Purpose |
 | --- | --- |
-| Duplicate charge | Billing policy and settled payments for the same invoice |
-| API timeouts | Incident status, affected region, and response playbook |
-| Locked account | Account lock state and identity-review policy |
-| Failed export | Plan eligibility and export service status |
-| Unknown issue | Missing information and human support escalation |
+| `DATABASE_URL` or `POSTGRES_URL` | PostgreSQL connection string |
+| `RELAY_PUBLIC_ORIGIN` | Exact HTTPS app origin when using a custom domain |
+| `GEMINI_API_KEY` / `GEMINI_MODEL` | Server-side Gemini credential and model for Live AI |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Optional Google OAuth Web application client |
+| `RELAY_DAILY_LIVE_LIMIT` | Shared cap on live starts and resumes in a rolling day, default 8 |
 
-## Live AI mode
+Register the exact URL `<origin>/api/session/google/callback` on the Google Web client. Keep credentials in your hosting provider’s environment settings. See [.env.example](.env.example) for the configuration names.
 
-### Gemini
+## Checks and evaluation
 
-Create a key in [Google AI Studio](https://aistudio.google.com/apikey), then run:
-
-```sh
-PORT=8001 python3 run_live.py
-```
-
-Enter the key at the **hidden terminal prompt**. Open **http://127.0.0.1:8001** and select **Live LLM**. The key stays in the process environment and is not written to disk. Never put credentials in issues or source files.
-
-The default model is `gemini-3.8-flash`; override it with `GEMINI_MODEL`. Eligibility and quota depend on your account; check [Google's current pricing](https://ai.google.dev/gemini-api/docs/pricing). Live requests send issue text and tool observations to Google. Use fictional data, particularly when testing the free tier.
-
-For a small authenticated tool-call connection check:
-
-```sh
-python3 run_live.py --check
-```
-
-### OpenAI
-
-```sh
-PORT=8001 python3 run_live.py --provider openai
-```
-
-Enter the OpenAI key privately. `OPENAI_MODEL` overrides the default `gpt-4.1-mini`. Provider pricing and quota apply.
-
-### Configuration
-
-| Variable | Purpose |
-| --- | --- |
-| `AGENT_PROVIDER` | `gemini` or `openai`; set by the launcher from `--provider` |
-| `GEMINI_API_KEY` / `OPENAI_API_KEY` | Alternative to the hidden prompt |
-| `GEMINI_MODEL` / `OPENAI_MODEL` | Model override |
-| `GEMINI_TIMEOUT_SECONDS` | Request timeout, 5–60 seconds; default 60 |
-| `PORT` | Local HTTP port; default 8000 |
-| `RELAY_WORKERS` | Worker threads per process, 1–16; default 2 |
-| `RELAY_QUEUE_CAPACITY` | Queued plus running jobs, 1–5000; default 100 |
-| `RELAY_DB_PATH` | Optional separate SQLite workspace path |
-
-`.env.example` contains empty key placeholders and **is not automatically loaded**. A separate evaluation terminal needs its own environment credentials.
-
-## Architecture and workflow
-
-```mermaid
-flowchart TD
-    Issue[Customer issue] --> Queue[Persistent job queue]
-    Queue --> Worker[Background worker]
-    Worker --> Plan[Record investigation plan]
-    Plan --> Model[Model selects next tool]
-    Model --> Read[Search policies / inspect scoped facts]
-    Read --> Observe[Return observations to model]
-    Observe --> Model
-    Model --> Verify[Verify draft proposal]
-    Verify -->|Missing evidence or policy failure| Model
-    Verify -->|Exact draft passes| Save[Save investigation and trace]
-    Save --> Human[Human review]
-    Human -->|Approve| Ticket[Create one local review ticket]
-    Human -->|Reject| Stop[Record rejection]
-```
-
-The model chooses tools based on observations. Python validates and executes requests. The model cannot select another customer account or invoke arbitrary shell, SQL, payment, or account-write tools.
-
-`verify_case` checks both the reply and review reason against cited evidence: invoice amounts and counts, account plan and lock state, export eligibility, service status and region, identifiers, and recognized prohibited action claims. Failed checks return specific feedback to the model. These deterministic English rules do not establish full semantic correctness. See [Evidence verification](docs/VERIFICATION.md) for coverage and limits. `complete_case` accepts only the exact verified draft after the latest evidence or plan change.
-
-The loop permits **16 tool calls**, checks a **180-second** wall-clock budget between calls, and uses configurable workers (**two by default**) behind a persistent queue. The wall-clock check is not a hard cancellation deadline for an in-flight provider request. Transient Gemini HTTP 500/502/503/504 errors receive up to three total attempts with bounded backoff. Retries do not replay local tool actions.
-
-## Tests and evaluation
-
-```sh
+~~~sh
 python3 -m unittest discover -s tests -v
 python3 evals.py
-python3 scripts/check_publish.py
-python3 scripts/benchmark_jobs.py --jobs 50 --workers 4
-```
-
-Tests cover routing, input validation, tool boundaries, verification feedback and invalidation, provider metadata replay, connection failures, and approval transactions. The demo evaluator includes **10 cases**, checking routing, required citations, verification, and absence of unapproved tickets.
-
-With provider credentials configured in the evaluation process:
-
-```sh
-python3 evals.py --live --limit 1
-```
-
-Live evaluation consumes quota. These checks **do not measure full semantic answer accuracy** or establish prompt-injection resistance.
-
-## Agent quality evaluation
-
-A separate quality suite contains 70 synthetic cases with fixed development and test splits. It reports action/tool checks, evidence coverage, clarification and abstention text proxies, latency, and returned tokens. Companion CSV files support human review of groundedness and response usefulness.
-
-```sh
 python3 evals.py --validate
 python3 evals.py --suite quality --split dev --output reports/demo-dev.json
-python3 evals.py --suite quality --live --provider gemini --prompt-key --split test --output reports/live-test.json
-```
+python3 scripts/check_publish.py --tracked
+~~~
 
-Use development cases for tuning and reserve test cases for a frozen configuration. Automatic scores are not semantic answer accuracy. Generated reports remain local in the ignored reports directory. See [evaluation reference](docs/EVALUATION.md).
-
-## Project structure
-
-```text
-supportops/       Agent loop, providers, tools, SQLite persistence
-web/             HTML, CSS, JavaScript workspace
-data/            Fictional policies, accounts, service status
-tests/           Unit and mocked-provider tests
-scripts/         Publication checks
-docs/            Execution workflow, setup, operations, and API reference
-server.py        Local HTTP API and static server
-run_live.py      Hidden key prompt and connection check
-evals.py         Demo/live evaluation CLI
-```
-
-## HTTP API
-
-| Method | Endpoint | Purpose |
-| --- | --- | --- |
-| GET | `/api/config` | Provider availability and fixture accounts; no credentials |
-| GET | `/api/runs?limit=20&before=<id>` | Paginated summaries and next cursor |
-| GET | `/api/health` | Worker configuration, queue counts, local tickets and delivery-state counts |
-| POST | `/api/runs/{id}/ticket/retry` | Retry a failed approved-ticket delivery without repeating the investigation |
-| GET | `/api/runs/{id}` | Saved investigation, evidence, plan, trace |
-| POST | `/api/runs` | Queue an investigation; returns 202. Include a unique `request_id` for duplicate protection |
-| POST | `/api/runs/{id}/retry` | Start a new linked run for a failed/interrupted investigation |
-| POST | `/api/runs/{id}/resume` | Continue a compatible saved live investigation on the same ID |
-| POST | `/api/runs/{id}/cancel` | Cancel a queued run immediately or request cooperative cancellation of running work |
-| GET | `/api/runs/{id}/events` | Stream versioned public run snapshots over SSE |
-| POST | `/api/runs/{id}/decision` | Submit `{ "decision": "approve" }` or `reject` |
-
-## Scope and limitations
-
-- **Demo mode is scripted.** Only live mode uses LLM-selected tools.
-- Accounts, payments, incidents, and knowledge documents are **fictional fixtures**.
-- Approval creates a local review ticket. An optional connector delivers the approved proposal to an isolated local HTTP test service; it does not issue a refund or change an account.
-- BM25 is the offline default. Optional semantic/hybrid retrieval uses Gemini embeddings; comparative live relevance is not yet measured. See [retrieval strategies](docs/RETRIEVAL.md).
-- Verification is **mechanical**, not proof that every claim is supported.
-- Completed live exchanges are saved privately and can resume on the same run after failure or interruption when configuration and budgets match. Fresh-run retry remains separate; see [conversation recovery](docs/RECOVERY.md).
-- The server binds to loopback. Authentication and tenant authorization are not implemented; internet deployment requires a production server and access controls.
-
-Credentials, runtime databases, local screenshots, caches, and private configuration are excluded from publication. A tracked-file allowlist and credential-pattern scan run in CI. Pattern scanning is defense in depth, not a guarantee of detecting every possible secret.
-
-## Documentation
-
-- [Execution workflow](docs/WORKFLOW.md)
-- [Provider configuration and troubleshooting](docs/EXTERNAL_SETUP.md)
-- [Job processing, recovery, and API reference](docs/SCALING.md)
-
-For independent relevance measurements and hidden-key comparison commands, see [retrieval strategies and evaluation](docs/RETRIEVAL.md). Demo mode remains offline; only explicitly configured live retrieval contacts the embedding provider.
-
-Optional approved-ticket delivery uses a durable outbox, bounded retries, and an idempotent local HTTP service. Start it with `python3 scripts/run_sandbox.py`; see [ticket delivery](docs/TICKETING.md) for setup, approval behavior and recovery.
-
-Live conversations can resume from private, atomic checkpoints without re-running committed tools. Original budgets, exact-proposal verification and human approval remain enforced; see [conversation recovery](docs/RECOVERY.md).
-
-### Streaming and cancellation
-
-The browser uses server-sent events for saved progress, with polling fallback if the stream fails. `POST /api/runs/{id}/cancel` cancels queued work immediately and requests cancellation of running work. The worker stops at its next tool/model boundary; an in-flight provider request may finish or time out first. A cancelled run cannot be approved or resumed, and it creates no ticket. Closing the browser stream alone does not cancel the job.
+The quality dataset has 70 synthetic cases split evenly into development and held-out sets. The automatic checks cover routing, tool use, citations and approval boundaries. Semantic accuracy requires a separate human review. Generated reports are ignored by Git. See [evaluation details](docs/EVALUATION.md), [verification rules](docs/VERIFICATION.md) and [conversation recovery](docs/RECOVERY.md).
